@@ -22,3 +22,6 @@ class CampParams(object):
     @classmethod
     def load_from_db(cls):
         pass
+
+    def __repr__(self):
+        return f"CampParams({self.__dict__})"

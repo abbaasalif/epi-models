@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 class Config(object):
     model_params = {
@@ -7,8 +8,8 @@ class Config(object):
         "default_quarantine_period": 5,
         "better_hygiene_infection_scale": 0.7,
     }
-    CONTACT_MATRIX_DIR = Path(__file__) / "contact_matrices"
-    index = {'S': 0,
+    CONTACT_MATRIX_DIR = Path(os.path.dirname(__file__)) / "contact_matrices"
+    compartment_index = {'S': 0,
              'E': 1,
              'I': 2,
              'A': 3,
@@ -19,7 +20,7 @@ class Config(object):
              'O': 8,
              'Q': 9,
              'U': 10,
-             'C S': 11,
+             'CS': 11,
              'CE': 12,
              'CI': 13,
              'CA': 14,
@@ -43,18 +44,18 @@ class Config(object):
                 'O': 'Offsite',
                 'Q': 'Quarantined',
                 'U': 'No ICU Care',
-                'CS': 'Change in Susceptible',
-                'CE': 'Change in Exposed',
-                'CI': 'Change in Infected (symptomatic)',
-                'CA': 'Change in Asymptomatically Infected',
-                'CR': 'Change in Recovered',
-                'CH': 'Change in Hospitalised',
-                'CC': 'Change in Critical',
-                'CD': 'Change in Deaths',
-                'CO': 'Change in Offsite',
-                'CQ': 'Change in Quarantined',
-                'CU': 'Change in No ICU Care',
-                'Ninf': 'Change in total active infections',  # sum of E, I, A
+                # 'CS': 'Change in Susceptible',
+                # 'CE': 'Change in Exposed',
+                # 'CI': 'Change in Infected (symptomatic)',
+                # 'CA': 'Change in Asymptomatically Infected',
+                # 'CR': 'Change in Recovered',
+                # 'CH': 'Change in Hospitalised',
+                # 'CC': 'Change in Critical',
+                # 'CD': 'Change in Deaths',
+                # 'CO': 'Change in Offsite',
+                # 'CQ': 'Change in Quarantined',
+                # 'CU': 'Change in No ICU Care',
+                # 'Ninf': 'Change in total active infections',  # sum of E, I, A
                 }
     shortname = {'S': 'Sus.',
                  'E': 'Exp.',

@@ -1,22 +1,25 @@
-from model import Model,ModelId
+from .model import Model,ModelId
 import numpy as np
-from config.compartmental_model import Config
+from .config.compartmental_model import Config
 import pandas as pd
 from scipy.integrate import ode
 import dask
 from dask.diagnostics import ProgressBar
+import multiprocessing
+from .params import CampParams
+
 
 class DeterministicCompartmentalModel(Model):
 
-    def __init__(self, camp_params, num_iterations=1000):
+    def __init__(self, camp_params: CampParams, num_iterations=1000):
         super().__init__()
         # load parameters
         self.load_epidemic_parameters()
         self.load_model_parameters()
         self.load_camp_parameters(camp_params)
         # process parameters
-        self.population_vector = self._compute_population_vector()
         self.process_epidemic_parameters()
+        self.population_vector = self._compute_population_vector()
         self.infection_matrix, self.im_beta_list, self.largest_eigenvalue = self._generate_infection_matrix()
 
     def id(self):
@@ -90,6 +93,15 @@ class DeterministicCompartmentalModel(Model):
         # we will get this from the UI default to 14 for now
         self.quarant_rate = 1 / (np.float(Config.model_params["default_quarantine_period"]))
 
+    def process_epidemic_parameters(self):
+        self.R_0_list = [self.R0_low, self.R0_medium, self.R0_high]
+        removal_rate = 1 / (np.float(self.Infectious_period))
+        self.beta_list = [R_0 * removal_rate for R_0 in self.R_0_list]
+
+        self.p_symptomatic = np.array(self.p_symptomatic)
+        self.p_hosp_given_symptomatic = np.array(self.p_hosp_given_symptomatic)
+        self.p_critical_given_hospitalised = np.array(self.p_critical_given_hospitalised)
+
     def generate_epidemic_parameter_ranges(self, num_iterations, scale=1, lb=1, seed=42):
         """Generate ranges of parameters with input parameters as mean and some custom standard deviation around it default generate 1000 sets of parameters"""
         generated_params = {}
@@ -102,12 +114,12 @@ class DeterministicCompartmentalModel(Model):
         generated_params['DeathNoICUPeriod'] = np.random.normal(self.Death_period, scale, num_iterations)
         generated_params_df = pd.DataFrame(generated_params)
         generated_params_df[generated_params_df <= 1] = lb
-        generated_params['latentRate'] = 1 / generated_params['LatentPeriod']
-        generated_params['removalRate'] = 1 / generated_params['RemovalPeriod']
-        generated_params['hospRate'] = 1 / generated_params['HospPeriod']
-        generated_params['deathRateICU'] = 1 / generated_params['DeathICUPeriod']
-        generated_params['deathRateNoICU'] = 1 / generated_params['DeathNoICUPeriod']
-        generated_params['beta'] = generated_params['removalRate'] * generated_params['R0'] / self.largest_eigenvalue
+        generated_params_df['latentRate'] = 1 / generated_params['LatentPeriod']
+        generated_params_df['removalRate'] = 1 / generated_params['RemovalPeriod']
+        generated_params_df['hospRate'] = 1 / generated_params['HospPeriod']
+        generated_params_df['deathRateICU'] = 1 / generated_params['DeathICUPeriod']
+        generated_params_df['deathRateNoICU'] = 1 / generated_params['DeathNoICUPeriod']
+        generated_params_df['beta'] = generated_params_df['removalRate'] * generated_params['R0'] / self.largest_eigenvalue
         return generated_params_df
 
     @staticmethod
@@ -119,9 +131,10 @@ class DeterministicCompartmentalModel(Model):
         # if wasn't in any of these time interval
         return False
 
-    def ode_equations(self, t, y, beta, latent_rate, removal_rate, scenario):
+    def ode_equations(self, t, y, beta, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU, scenario):
         """ t is the time step and y is the value of the eqaution at each time step and this equation is run through at each integration time step"""
-
+        # extract scenario dict for this time step:
+        scenario_dict = scenario.intervention_params_at_time_t(t)
         y2d = y.reshape(self.age_categories, self.number_compartments).T
         # the gradients of number of people with respect to time
         dydt2d = np.zeros(y2d.shape)
@@ -143,12 +156,19 @@ class DeterministicCompartmentalModel(Model):
         total_H = sum(H_vec)
 
         # Intervention: removing high risk population
-        first_high_risk_category_n = self.age_categories - remove_high_risk['n_categories_removed']
+        first_high_risk_category_n = self.age_categories - scenario_dict['first_high_risk_category_n']
         S_removal = sum(y2d[Config.compartment_index['S']], first_high_risk_category_n)
 
         # Intervention: removing symptomatic individuals
         # these are put into Q ('quarantine');
-        quarantine_sicks = (remove_symptomatic_rate / total_I) * I_vec  # no age bias in who is moved
+        quarantine_sicks = (scenario_dict['remove_symptomatic_rate'] / total_I) * I_vec  # no age bias in who is moved
+
+        # ICU capacity
+        if total_H > 0:  # can't divide by 0
+            hospitalized_on_icu = scenario_dict["icu_capacity"] / total_H * H_vec
+            # ICU beds allocated on a first come, first served basis based on the numbers in hospital
+        else:
+            hospitalized_on_icu = np.full(self.age_categories, scenario_dict["icu_capacity"])
 
         # Laying out differential equations:
         # S
@@ -156,12 +176,12 @@ class DeterministicCompartmentalModel(Model):
         infection_I = np.dot(self.infection_matrix, I_vec)
         infection_A = np.dot(self.infection_matrix, A_vec)
         infection_total = (infection_I + self.AsymptInfectiousFactor * infection_A)
-        offsite = high_risk_people_removal_rates / S_removal * S_vec
+        offsite = scenario_dict["remove_high_risk_rate"] / S_removal * S_vec
         # Intervention: transimission reduction via better hygiene
-        dydt2d[Config.compartment_index['S'], :] = (- transmission_reduction_factor * beta * S_vec * infection_total - offsite)
+        dydt2d[Config.compartment_index['S'], :] = (- scenario_dict["transmission_reduction_factor"] * beta * S_vec * infection_total - offsite)
 
         # E
-        dydt2d[Config.compartment_index['E'], :] = (transmission_reduction_factor * beta * S_vec * infection_total - E_latent)
+        dydt2d[Config.compartment_index['E'], :] = (scenario_dict["transmission_reduction_factor"] * beta * S_vec * infection_total - E_latent)
 
         # I
         dydt2d[Config.compartment_index['I'], :] = (self.p_symptomatic * E_latent - I_removed - quarantine_sicks)
@@ -192,7 +212,7 @@ class DeterministicCompartmentalModel(Model):
         dydt2d[Config.compartment_index['C'], :] = (icu_cared - deaths_on_icu)
 
         # Uncared - no ICU
-        deaths_without_icu = death_rate_NoICU * y2d[Config.compartment_index['U'],:]  # died without ICU treatment (all cases that don't get treatment die)
+        deaths_without_icu = death_rate_no_ICU * y2d[Config.compartment_index['U'],:]  # died without ICU treatment (all cases that don't get treatment die)
         dydt2d[Config.compartment_index['U'], :] = (needing_care - icu_cared - deaths_without_icu)  # without ICU treatment
 
         # R
@@ -218,7 +238,7 @@ class DeterministicCompartmentalModel(Model):
         return dydt2d.T.reshape(y.shape)
 
     def run_model(self, scenario, t_stop=200, r0=None, beta=None, latent_rate=None, removal_rate=None, hosp_rate=None, death_rate_ICU=None, death_rate_no_ICU=None, initial_exposed=0, initial_symp=0, initial_asymp=0, intergrator_type='vode'):
-        """"""
+        """high level function for running the model via differential equation solver from scipy"""
         # initialise the epidemic
         seir_matrix = np.zeros((self.number_compartments, 1))
 
@@ -251,22 +271,25 @@ class DeterministicCompartmentalModel(Model):
             else:
                 raise RuntimeError('ode solver unsuccessful')
 
-        solution_frame = self.parse_model_output(y_out, time_range, r0, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU)
+        y_sum = np.zeros((self.number_compartments, t_sim + 1))
+        for compartment in Config.longname.keys():
+            for i in range(self.age_categories):  # age_categories
+                y_sum[Config.compartment_index[compartment], :] += y_out[Config.compartment_index[compartment] + i * self.number_compartments,:]
+
+        solution_frame = self.parse_model_output(y_out, y_sum, time_range, r0, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU)
 
         return solution_frame
 
-    def parse_model_output(self, y_out, time_range, r0, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU):
+    def parse_model_output(self, y_out, y_sum, time_range, r0, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU):
         """ to be run after a simulation to present simualtion results in a dataframe"""
         # setup column names
         AGE_SEP = ': '  # separate compartment and age in column name
-        number_categories_with_age = self.number_compartments * self.age_categories
         disease_compartment_col_names = [name for name in Config.longname.values()]
-        diseas_age_compartment_col_names = [name + AGE_SEP + age for name in Config.longname.values() for age in self.ages]
+        disease_age_compartment_col_names = [name + AGE_SEP + age for name in Config.longname.values() for age in self.ages]
         disease_param_col_names = ['R0', 'latentRate', 'removalRate', 'hospRate', 'deathRateICU', 'deathRateNoIcu']
         time_col_name = ['Time']
-        col_names = disease_compartment_col_names + diseas_age_compartment_col_names + disease_param_col_names + time_col_name
         data_store = np.transpose(y_out)
-        data_store_df = pd.DataFrame(data_store, columns=col_names)
+        data_store_df = pd.DataFrame(data_store, columns = disease_age_compartment_col_names)
         data_store_df['Time'] = time_range
         data_store_df['R0'] = [r0] * len(time_range)
         data_store_df['latentRate'] = [latent_rate] * len(time_range)
@@ -274,16 +297,20 @@ class DeterministicCompartmentalModel(Model):
         data_store_df['hospRate'] = [hosp_rate] * len(time_range)
         data_store_df['deathRateICU'] = [death_rate_ICU] * len(time_range)
         data_store_df['deathRateNoIcu'] = [death_rate_no_ICU] * len(time_range)
+        aggregated_compartment_output = np.transpose(y_sum)
+        data_store_df = pd.concat([data_store_df, pd.DataFrame(aggregated_compartment_output, columns=disease_compartment_col_names)], axis=1)
+        col_names = disease_compartment_col_names + disease_age_compartment_col_names + disease_param_col_names + time_col_name
+        assert len(col_names) == len(data_store_df.columns)
         return data_store_df
 
-    def run_single_simulation(self, scenario_dict, num_iterations, t_stop, initial_exposed, initial_symp, initial_asymp):
+    def run_single_simulation(self, scenario, num_iterations=1000, t_stop=200, initial_exposed=1, initial_symp=1, initial_asymp=1):
         # allow two implementation where one the initial seeds are fixed throughout
         # and the second one where initial exposed/symp/asymp are input as arrays
         generated_params_df = self.generate_epidemic_parameter_ranges(num_iterations)
         lazy_sols = []
         sols_raw = {} # raw output for solutions
         for index, row in generated_params_df.iterrows():
-            lazy_result = dask.delayed(self.run_model)(t_stop=t_stop, r0=row["R0"], beta=row["beta"],
+            lazy_result = dask.delayed(self.run_model)(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
                                                        latent_rate=row['latentRate'],
                                                        removal_rate=row['removalRate'],
                                                        hosp_rate=row['hospRate'],
@@ -293,7 +320,7 @@ class DeterministicCompartmentalModel(Model):
                                                        initial_asymp = initial_asymp,
                                                        )
             lazy_sols.append(lazy_result)
-        with dask.config.set(scheduler='single-threaded', num_workers=1):
+        with dask.config.set(scheduler='processes', num_workers=multiprocessing.cpu_count()):
             with ProgressBar():
                 sols = dask.compute(*lazy_sols)
         simulation_result_frame = pd.concat(sols, axis=0)

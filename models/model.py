@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from config.epidemic_params import covid_specific_parameters
-from params import CampParams
+from .config.epidemic_params import covid_specific_parameters
+from .params import CampParams
 
 class Model(ABC):
     def __init__(self):
