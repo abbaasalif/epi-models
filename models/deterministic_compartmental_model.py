@@ -114,12 +114,12 @@ class DeterministicCompartmentalModel(Model):
         generated_params['DeathNoICUPeriod'] = np.random.normal(self.Death_period, scale, num_iterations)
         generated_params_df = pd.DataFrame(generated_params)
         generated_params_df[generated_params_df <= 1] = lb
-        generated_params_df['latentRate'] = 1 / generated_params['LatentPeriod']
-        generated_params_df['removalRate'] = 1 / generated_params['RemovalPeriod']
-        generated_params_df['hospRate'] = 1 / generated_params['HospPeriod']
-        generated_params_df['deathRateICU'] = 1 / generated_params['DeathICUPeriod']
-        generated_params_df['deathRateNoICU'] = 1 / generated_params['DeathNoICUPeriod']
-        generated_params_df['beta'] = generated_params_df['removalRate'] * generated_params['R0'] / self.largest_eigenvalue
+        generated_params_df['latentRate'] = 1 / generated_params_df['LatentPeriod']
+        generated_params_df['removalRate'] = 1 / generated_params_df['RemovalPeriod']
+        generated_params_df['hospRate'] = 1 / generated_params_df['HospPeriod']
+        generated_params_df['deathRateICU'] = 1 / generated_params_df['DeathICUPeriod']
+        generated_params_df['deathRateNoICU'] = 1 / generated_params_df['DeathNoICUPeriod']
+        generated_params_df['beta'] = generated_params_df['removalRate'] * generated_params_df['R0'] / self.largest_eigenvalue
         return generated_params_df
 
     @staticmethod
@@ -165,10 +165,10 @@ class DeterministicCompartmentalModel(Model):
 
         # ICU capacity
         if total_H > 0:  # can't divide by 0
-            hospitalized_on_icu = scenario_dict["icu_capacity"] / total_H * H_vec
+            hospitalized_on_icu = (scenario_dict["icu_capacity"] / self.population_size) / total_H * H_vec
             # ICU beds allocated on a first come, first served basis based on the numbers in hospital
         else:
-            hospitalized_on_icu = np.full(self.age_categories, scenario_dict["icu_capacity"])
+            hospitalized_on_icu = np.full(self.age_categories, (scenario_dict["icu_capacity"] / self.population_size))
 
         # Laying out differential equations:
         # S
@@ -204,6 +204,8 @@ class DeterministicCompartmentalModel(Model):
         needing_care = hosp_rate * self.p_critical_given_hospitalised * H_vec  # number needing care
 
         # number who get icu care (these entered category C)
+        # print(f"at time {t} the hospitalized_on_icu value is {hospitalized_on_icu*20000}")
+        # print(f"at time {t} the without_deaths_on_icu value is {without_deaths_on_icu*20000}")
         icu_cared = np.minimum(needing_care, hospitalized_on_icu - without_deaths_on_icu)
 
         # amount entering is minimum of: amount of beds available**/number needing it
@@ -212,7 +214,7 @@ class DeterministicCompartmentalModel(Model):
         dydt2d[Config.compartment_index['C'], :] = (icu_cared - deaths_on_icu)
 
         # Uncared - no ICU
-        deaths_without_icu = death_rate_no_ICU * y2d[Config.compartment_index['U'],:]  # died without ICU treatment (all cases that don't get treatment die)
+        deaths_without_icu = death_rate_no_ICU * y2d[Config.compartment_index['U'], :]  # died without ICU treatment (all cases that don't get treatment die)
         dydt2d[Config.compartment_index['U'], :] = (needing_care - icu_cared - deaths_without_icu)  # without ICU treatment
 
         # R
@@ -253,7 +255,7 @@ class DeterministicCompartmentalModel(Model):
         # initial conditions
         y0 = y_initial.T.reshape(self.number_compartments * self.age_categories)
 
-        sol = ode(self.ode_equations).set_f_params(beta, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU, scenario).set_integrator(intergrator_type, nsteps=2000)
+        sol = ode(self.ode_equations).set_f_params(beta, latent_rate, removal_rate, hosp_rate, death_rate_ICU, death_rate_no_ICU, scenario).set_integrator(intergrator_type, nsteps=5000)
 
         time_range = np.arange(t_stop+1)  # 1 time value per day
 
@@ -285,7 +287,7 @@ class DeterministicCompartmentalModel(Model):
         # setup column names
         AGE_SEP = ': '  # separate compartment and age in column name
         disease_compartment_col_names = [name for name in Config.longname.values()]
-        disease_age_compartment_col_names = [name + AGE_SEP + age for name in Config.longname.values() for age in self.ages]
+        disease_age_compartment_col_names = [name + AGE_SEP + age for age in self.ages for name in Config.longname.values()]
         disease_param_col_names = ['R0', 'latentRate', 'removalRate', 'hospRate', 'deathRateICU', 'deathRateNoIcu']
         time_col_name = ['Time']
         data_store = np.transpose(y_out)
@@ -304,6 +306,7 @@ class DeterministicCompartmentalModel(Model):
         return data_store_df
 
     def run_single_simulation(self, scenario, num_iterations=1000, t_stop=200, initial_exposed=1, initial_symp=1, initial_asymp=1):
+        # TODO: swap this for a dask distributed client so it is non-blocking
         # allow two implementation where one the initial seeds are fixed throughout
         # and the second one where initial exposed/symp/asymp are input as arrays
         generated_params_df = self.generate_epidemic_parameter_ranges(num_iterations)
