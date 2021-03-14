@@ -1,7 +1,7 @@
 import numpy as np
 
 class DeterministicCompartmentalModelScenario(object):
-    def __init__(self, transmission_reduction_factor=1, remove_symptomatic_rate=0, remove_high_risk_rate=0, first_high_risk_category_n=2, icu_capacity=6):
+    def __init__(self, population_size, transmission_reduction_factor=1, isolation_capacity=0, remove_symptomatic_rate=0, remove_high_risk_rate=0, first_high_risk_category_n=2, icu_capacity=6):
         # baseline parameters that need to be run (Do nothing scenario)
         # self.transmission_reduction_factor = transmission_reduction_factor
         # self.remove_symptomatic_rate = remove_symptomatic_rate
@@ -10,11 +10,12 @@ class DeterministicCompartmentalModelScenario(object):
         # self.ICU_capacity = icu_capacity
         param_dict = dict()
         param_dict['transmission_reduction_factor'] = transmission_reduction_factor
+        param_dict['isolation_capacity'] = isolation_capacity
         param_dict['remove_symptomatic_rate'] = remove_symptomatic_rate
         param_dict['first_high_risk_category_n'] = first_high_risk_category_n
         param_dict['remove_high_risk_rate'] = remove_high_risk_rate
         param_dict['icu_capacity'] = icu_capacity
-        self.baseline_param_dict = param_dict
+        self.baseline_param_dict = self.parse_param_dict(param_dict, population_size)
 
     @staticmethod
     def _validate_input_params(transmission_reduction_factor, remove_symptomatic_rate, remove_high_risk_rate, first_high_risk_category_n, icu_capacity, infection_matrix):
@@ -38,19 +39,36 @@ class DeterministicCompartmentalModelScenario(object):
 
         return infection_matrix
 
+    @staticmethod
+    def parse_param_dict(raw_param_dict, population_size: int):
+        parsed_param_dict = dict(raw_param_dict)
+        parsed_param_dict['isolation_capacity'] = raw_param_dict["isolation_capacity"] / population_size
+        parsed_param_dict["remove_symptomatic_rate"] = raw_param_dict["isolation_capacity"] / population_size
+        parsed_param_dict["remove_high_risk_rate"] = raw_param_dict["isolation_capacity"] / population_size
+        parsed_param_dict["icu_capacity"] = raw_param_dict["isolation_capacity"] / population_size
+        return parsed_param_dict
+
+
+    def intervention_params_at_time_t(self, t: int):
+        return self.baseline_param_dict
+
 
 class SingleInterventionScenario(DeterministicCompartmentalModelScenario):
     # TODO: give two intensity setting mode - one is constant where values stay the same throughout the duration or the other one is a linear decay or inverse exponential decay where the efficacy of the intervention decreases throughout the intervention cycles
-    def __init__(self, start_times, end_times, infection_matrix, apply_shielding=False, transmission_reduction_factor_inter=1, remove_symptomatic_rate_inter = 0, remove_high_risk_rate_inter=0, first_high_risk_category_n_inter=2, icu_capacity_inter=6, inter_rate_change='Constant'):
-        DeterministicCompartmentalModelScenario.__init__(self)
+    def __init__(self, population_size, start_times, end_times, infection_matrix, apply_shielding=False, transmission_reduction_factor_inter=1, isolation_capacity_inter = 0, remove_symptomatic_rate_inter = 0, remove_high_risk_rate_inter=0, first_high_risk_category_n_inter=2, icu_capacity_inter=6, inter_rate_change='Constant', camp_specific_baseline_scenario=None):
+        super().__init__(population_size)
+        if camp_specific_baseline_scenario is not None:
+            # swap out the baseline params with the camp current params
+            self.baseline_param_dict = camp_specific_baseline_scenario.baseline_param_dict
         self._validate_input_params(transmission_reduction_factor_inter, remove_symptomatic_rate_inter, remove_high_risk_rate_inter, first_high_risk_category_n_inter, icu_capacity_inter, infection_matrix)
         param_dict = dict()
         param_dict['transmission_reduction_factor'] = transmission_reduction_factor_inter
+        param_dict['isolation_capacity'] = isolation_capacity_inter
         param_dict['remove_symptomatic_rate'] = remove_symptomatic_rate_inter
         param_dict['first_high_risk_category_n'] = first_high_risk_category_n_inter
         param_dict['remove_high_risk_rate'] = remove_high_risk_rate_inter
         param_dict['icu_capacity'] = icu_capacity_inter
-        self.intervention_param_dict = param_dict
+        self.intervention_param_dict = self.parse_param_dict(param_dict, population_size)
         self._validate_input_time(start_times, end_times)
         self.start_times = start_times
         self.end_times = end_times

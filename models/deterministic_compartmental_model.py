@@ -1,4 +1,5 @@
-from .model import Model,ModelId
+from .model import Model,ModelId, ModelRunner
+from .deterministic_compartmental_model_scenario import DeterministicCompartmentalModelScenario
 import numpy as np
 from .config.compartmental_model import Config
 import pandas as pd
@@ -7,6 +8,7 @@ import dask
 from dask.diagnostics import ProgressBar
 import multiprocessing
 from .params import CampParams
+from typing import Tuple
 
 
 class DeterministicCompartmentalModel(Model):
@@ -16,25 +18,43 @@ class DeterministicCompartmentalModel(Model):
         # load parameters
         self.load_epidemic_parameters()
         self.load_model_parameters()
-        self.load_camp_parameters(camp_params)
         # process parameters
         self.process_epidemic_parameters()
-        self.population_vector = self._compute_population_vector()
-        self.infection_matrix, self.im_beta_list, self.largest_eigenvalue = self._generate_infection_matrix()
+        self.population_vector, self.population_size, self.infection_matrix, self.im_beta_list, self.largest_eigenvalue = self.process_and_load_camp_parameters(camp_params)
 
     def id(self):
         return ModelId.DeterministicCompartmentalModel
 
-    def _generate_contact_matrix(self):
+    def process_and_load_camp_parameters(self, camp_params: CampParams):
+        # load the population vector
+        population_vector, population_size = self._compute_population_vector(camp_params.population_age_0_9,
+                                                                             camp_params.population_age_10_19,
+                                                                             camp_params.population_age_20_29,
+                                                                             camp_params.population_age_30_39,
+                                                                             camp_params.population_age_40_49,
+                                                                             camp_params.population_age_50_59,
+                                                                             camp_params.population_age_60_69,
+                                                                             camp_params.population_age_70_above)
+        # load country parameter and load the contact matrix
+        contact_matrix = self._generate_contact_matrix(camp_params.country, population_vector, self.age_limits)
+        infection_matrix, beta_list_new, largest_eigenvalue = self._generate_infection_matrix(contact_matrix, population_vector, self.beta_list)
+
+        # load the intervention available and make it into a 'baseline' scenario for this particular camp
+        # generate many different scenarios according to the profile of the camp
+        # these two functionalities not will be deferred to the model runner class
+        return population_vector, population_size, infection_matrix, beta_list_new, largest_eigenvalue
+
+    @staticmethod
+    def _generate_contact_matrix(country, population_vector, age_limits):
         """Squeeze 5-year gap, 16 age compartment POLYMOD contact matrix into 10-year gap, 8 age compartment used in this model"""
         # TODO Walk through this code and write some tests for it
-        contact_matrix_path = Config.CONTACT_MATRIX_DIR / f'{self.country}.csv'
+        contact_matrix_path = Config.CONTACT_MATRIX_DIR / f'{country}.csv'
         contact_matrix = pd.read_csv(contact_matrix_path).to_numpy()
-        n_categories = len(self.age_limits) - 1
-        ind_limits = np.array(self.age_limits / 5, dtype=int)
+        n_categories = len(age_limits) - 1
+        ind_limits = np.array(age_limits / 5, dtype=int)
         p = np.zeros(16)
         for i in range(n_categories):
-            p[ind_limits[i]: ind_limits[i + 1]] = self.population_vector[i] / (ind_limits[i + 1] - ind_limits[i])
+            p[ind_limits[i]: ind_limits[i + 1]] = population_vector[i] / (ind_limits[i + 1] - ind_limits[i])
         transformed_matrix = np.zeros((n_categories, n_categories))
         for i in range(n_categories):
             for j in range(n_categories):
@@ -45,33 +65,33 @@ class DeterministicCompartmentalModel(Model):
                 transformed_matrix[i, j] = v1
         return transformed_matrix
 
-    def _generate_infection_matrix(self):
+    @staticmethod
+    def _generate_infection_matrix(contact_matrix, population_vector, beta_list):
         # TODO: write tests for it with known cases
-        infection_matrix = self._generate_contact_matrix()
+        infection_matrix = contact_matrix
         assert infection_matrix.shape[0] == infection_matrix.shape[1], "Infection matrix is supposed to be a square matrix"
 
-        next_generation_matrix = np.matmul(0.01 * np.diag(self.population_vector), infection_matrix)
+        next_generation_matrix = np.matmul(0.01 * np.diag(population_vector), infection_matrix)
         largest_eigenvalue = max(np.linalg.eig(next_generation_matrix)[0])  # max eigenvalue
 
-        beta_list = np.linspace(self.beta_list[0], self.beta_list[2], 20)
-        beta_list = np.real((1 / largest_eigenvalue) * beta_list)  # in case eigenvalue imaginary
+        beta_list_expanded = np.linspace(beta_list[0], beta_list[2], 20)
+        beta_list_new = np.real((1 / largest_eigenvalue) * beta_list_expanded)  # in case eigenvalue imaginary
 
-        return infection_matrix, beta_list, largest_eigenvalue
+        return infection_matrix, beta_list_new, largest_eigenvalue
 
-    def _compute_population_vector(self):
-        # generate population vector
-        age0to5 = float(self.age_population_0_5)
-        age6to9 = float(self.age_population_6_9)
-        population_structure = np.asarray([age0to5 + age6to9, float(self.age_population_10_19),
-                                           float(self.age_population_20_29),
-                                           float(self.age_population_30_39),
-                                           float(self.age_population_40_49),
-                                           float(self.age_population_50_59),
-                                           float(self.age_population_60_69),
-                                           float(self.age_population_70_and_above)])
-        self.population_size = int(self.total_population)
+    @staticmethod
+    def _compute_population_vector(age_population_0_9: int, age_population_10_19: int, age_population_20_29: int, age_population_30_39: int, age_population_40_49: int, age_population_50_59: int, age_population_60_69: int, age_population_70_and_above: int) -> Tuple[np.ndarray, int]:
+        """generate the population vector"""
+        population_size = age_population_0_9 + age_population_10_19 + age_population_20_29 + age_population_30_39 + age_population_40_49 + age_population_50_59 + age_population_60_69 + age_population_70_and_above
+        population_structure = np.asarray([age_population_0_9, age_population_10_19,
+                                           age_population_20_29,
+                                           age_population_30_39,
+                                           age_population_40_49,
+                                           age_population_50_59,
+                                           age_population_60_69,
+                                           age_population_70_and_above])
         # load the population vector as a vector
-        return population_structure / self.population_size * 100
+        return population_structure / population_size * 100, population_size
 
     def load_model_parameters(self):
         # in toatl there are 11 disease compartments
@@ -158,10 +178,15 @@ class DeterministicCompartmentalModel(Model):
         # Intervention: removing high risk population
         first_high_risk_category_n = self.age_categories - scenario_dict['first_high_risk_category_n']
         S_removal = sum(y2d[Config.compartment_index['S']], first_high_risk_category_n)
+        remove_high_risk_people = min(S_removal, scenario_dict["remove_high_risk_rate"])
 
         # Intervention: removing symptomatic individuals
         # these are put into Q ('quarantine');
-        quarantine_sicks = (scenario_dict['remove_symptomatic_rate'] / total_I) * I_vec  # no age bias in who is moved
+        remove_symptomatic_rate = min(total_I, scenario_dict['remove_symptomatic_rate'])
+        # check on the capacity as people are coming out of quarantine everyday
+        Q_occupied = sum(Q_vec - Q_quarantined)
+        Q_left_over_capacity = scenario_dict['isolation_capacity'] - Q_occupied
+        quarantine_sicks = min((remove_symptomatic_rate / total_I) * I_vec, Q_left_over_capacity)  # no age bias in who is moved
 
         # ICU capacity
         if total_H > 0:  # can't divide by 0
@@ -176,7 +201,7 @@ class DeterministicCompartmentalModel(Model):
         infection_I = np.dot(self.infection_matrix, I_vec)
         infection_A = np.dot(self.infection_matrix, A_vec)
         infection_total = (infection_I + self.AsymptInfectiousFactor * infection_A)
-        offsite = scenario_dict["remove_high_risk_rate"] / S_removal * S_vec
+        offsite = remove_high_risk_people / S_removal * S_vec
         # Intervention: transimission reduction via better hygiene
         dydt2d[Config.compartment_index['S'], :] = (- scenario_dict["transmission_reduction_factor"] * beta * S_vec * infection_total - offsite)
 
@@ -331,5 +356,62 @@ class DeterministicCompartmentalModel(Model):
 
     def run_multiple_simulations(self):
         pass
+
+
+class DeterministicCompartmentalModelRunner(ModelRunner):
+    def __init__(self, camp_params: CampParams):
+        super().__init__()
+        self.model = DeterministicCompartmentalModel(camp_params)
+        self.do_nothing_scenario = DeterministicCompartmentalModelScenario(self.model.population_size)
+        camp_baseline_params = self.process_camp_params(camp_params)
+        self.camp_baseline = DeterministicCompartmentalModelScenario(self.model.population_size, *camp_baseline_params)
+
+    def process_camp_params(self, camp_params):
+        """generate transmission_reduction_factor=1, isolation_capacity=0, remove_symptomatic_rate=0, remove_high_risk_rate=0, first_high_risk_category_n=2, icu_capacity=6 from the camp params"""
+        # transmission_reduction_factor is a blend from mask_wearing, hand_washing and social_distancing
+        # mask_wearing, hand washing and social distancing come from four different bands (0-3) corresponding to 0-25%, 26-50%, 51-75% and 76-100%
+        transmission_reduction_factor_lower_bound = 0.5 # if all three categories are of the highest band
+        # assuming the effects of three intervention are additive and effectiveness of one is then (1-lb) / 3
+        transmission_reduction_effectiveness_per_intervention = (1 - transmission_reduction_factor_lower_bound) / 3
+        effectiveness_mapping_dict = {
+            "0": 0.125,
+            "1": 0.375,
+            "2": 0.625,
+            "3": 0.875,
+        }
+        interventions = [camp_params.mask_wearing, camp_params.hand_washing, camp_params.social_distancing]
+        total_transmission_reduction = sum([effectiveness_mapping_dict[intervention]*transmission_reduction_effectiveness_per_intervention for intervention in interventions])
+        transmission_reduction_factor = 1 - total_transmission_reduction
+
+        isolation_capacity = int(camp_params.isolation_capacity)
+        if isolation_capacity == 0:
+            remove_symptomatic_rate = 0
+        else:
+            # TODO: add remove symptomatic rate as a question in the data capture, now assume that the rate is at 1% of the total population of the camp
+            remove_symptomatic_rate = int(self.model.population_size)*0.01
+
+        offsite_removal_number = int(camp_params.high_risk_offsite_number)
+        first_high_risk_category_n = 2 # default
+        if offsite_removal_number == 0:
+            remove_high_risk_rate = 0
+        else:
+            # base on remove high risk number to guess which age categories are being removed
+            population_vector_reversed = np.cumsum(np.flip(self.model.population_vector * self.model.population_size))
+            first_high_risk_category_n = (
+                        next((i for i, v in enumerate(population_vector_reversed) if v > offsite_removal_number), 0) + 1)
+            remove_high_risk_rate = int(self.model.population_size)*0.01
+
+        icu_capacity = int(camp_params.number_of_ICU_beds)
+        return transmission_reduction_factor, isolation_capacity, remove_symptomatic_rate, remove_high_risk_rate, first_high_risk_category_n, icu_capacity
+
+
+
+
+
+
+
+
+
+
 
 
