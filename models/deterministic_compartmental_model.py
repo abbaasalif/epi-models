@@ -186,11 +186,12 @@ class DeterministicCompartmentalModel(Model):
         # check on the capacity as people are coming out of quarantine everyday
         Q_occupied = sum(Q_vec - Q_quarantined)
         Q_left_over_capacity = scenario_dict['isolation_capacity'] - Q_occupied
-        quarantine_sicks = min((remove_symptomatic_rate / total_I) * I_vec, Q_left_over_capacity)  # no age bias in who is moved
+        remove_symptomatic_rate = min(Q_left_over_capacity, remove_symptomatic_rate)
+        quarantine_sicks = (remove_symptomatic_rate / total_I) * I_vec  # no age bias in who is moved
 
         # ICU capacity
         if total_H > 0:  # can't divide by 0
-            hospitalized_on_icu = (scenario_dict["icu_capacity"] / self.population_size) / total_H * H_vec
+            hospitalized_on_icu = scenario_dict["icu_capacity"] / total_H * H_vec
             # ICU beds allocated on a first come, first served basis based on the numbers in hospital
         else:
             hospitalized_on_icu = np.full(self.age_categories, (scenario_dict["icu_capacity"] / self.population_size))
@@ -403,6 +404,12 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
 
         icu_capacity = int(camp_params.number_of_ICU_beds)
         return transmission_reduction_factor, isolation_capacity, remove_symptomatic_rate, remove_high_risk_rate, first_high_risk_category_n, icu_capacity
+
+    def run_baselines(self):
+        # we run donothing baseline and camp baseline respectively
+        do_nothing_baseline = self.model.run_single_simulation(self.do_nothing_scenario)
+        camp_baseline = self.model.run_single_simulation(self.camp_baseline)
+        return do_nothing_baseline, camp_baseline
 
 
 

@@ -43,9 +43,9 @@ class DeterministicCompartmentalModelScenario(object):
     def parse_param_dict(raw_param_dict, population_size: int):
         parsed_param_dict = dict(raw_param_dict)
         parsed_param_dict['isolation_capacity'] = raw_param_dict["isolation_capacity"] / population_size
-        parsed_param_dict["remove_symptomatic_rate"] = raw_param_dict["isolation_capacity"] / population_size
-        parsed_param_dict["remove_high_risk_rate"] = raw_param_dict["isolation_capacity"] / population_size
-        parsed_param_dict["icu_capacity"] = raw_param_dict["isolation_capacity"] / population_size
+        parsed_param_dict["remove_symptomatic_rate"] = raw_param_dict["remove_symptomatic_rate"] / population_size
+        parsed_param_dict["remove_high_risk_rate"] = raw_param_dict["remove_high_risk_rate"] / population_size
+        parsed_param_dict["icu_capacity"] = raw_param_dict["icu_capacity"] / population_size
         return parsed_param_dict
 
 

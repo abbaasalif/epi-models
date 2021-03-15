@@ -1,3 +1,3 @@
-from .deterministic_compartmental_model import DeterministicCompartmentalModel
-from .deterministic_compartmental_model_scenario import SingleInterventionScenario
+from .deterministic_compartmental_model import DeterministicCompartmentalModel, DeterministicCompartmentalModelRunner
+from .deterministic_compartmental_model_scenario import DeterministicCompartmentalModelScenario, SingleInterventionScenario
 from .params import CampParams
