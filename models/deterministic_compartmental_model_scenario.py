@@ -93,7 +93,7 @@ class SingleInterventionScenario(DeterministicCompartmentalModelScenario):
 
     def intervention_params_at_time_t(self, t: int):
         for start, end in zip(self.start_times, self.end_times):
-            if t in range(start,end):
+            if (t >= start) and (t <= end):
                 if self.inter_rate_change == 'Constant':
                     return self.intervention_param_dict
                 elif self.inter_rate_change == 'Decay':

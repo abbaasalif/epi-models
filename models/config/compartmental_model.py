@@ -5,7 +5,7 @@ class Config(object):
     model_params = {
         "shiedling_reduction_between_groups": 0.25,
         "shielding_increase_within_group": 2,
-        "default_quarantine_period": 5,
+        "default_quarantine_period": 200,
         "better_hygiene_infection_scale": 0.7,
     }
     CONTACT_MATRIX_DIR = Path(os.path.dirname(__file__)) / "contact_matrices"

@@ -155,6 +155,7 @@ class DeterministicCompartmentalModel(Model):
         """ t is the time step and y is the value of the eqaution at each time step and this equation is run through at each integration time step"""
         # extract scenario dict for this time step:
         scenario_dict = scenario.intervention_params_at_time_t(t)
+        # print(scenario_dict)
         y2d = y.reshape(self.age_categories, self.number_compartments).T
         # the gradients of number of people with respect to time
         dydt2d = np.zeros(y2d.shape)
@@ -182,12 +183,21 @@ class DeterministicCompartmentalModel(Model):
 
         # Intervention: removing symptomatic individuals
         # these are put into Q ('quarantine');
-        remove_symptomatic_rate = min(total_I, scenario_dict['remove_symptomatic_rate'])
-        # check on the capacity as people are coming out of quarantine everyday
-        Q_occupied = sum(Q_vec - Q_quarantined)
-        Q_left_over_capacity = scenario_dict['isolation_capacity'] - Q_occupied
-        remove_symptomatic_rate = min(Q_left_over_capacity, remove_symptomatic_rate)
-        quarantine_sicks = (remove_symptomatic_rate / total_I) * I_vec  # no age bias in who is moved
+        quarantined_sicks_sendback = 0
+        if (scenario_dict['remove_symptomatic_rate'] > 0) and (scenario_dict['isolation_capacity'] > 0):
+            remove_symptomatic_rate = min(total_I, scenario_dict['remove_symptomatic_rate'])
+            # check on the capacity as people are coming out of quarantine everyday
+            # Q_occupied = sum(Q_vec - Q_quarantined)
+            total_Q = sum(Q_vec)
+            Q_left_over_capacity = scenario_dict['isolation_capacity'] - total_Q
+            remove_symptomatic_rate = min(Q_left_over_capacity, remove_symptomatic_rate)
+            quarantine_sicks = (remove_symptomatic_rate / total_I) * I_vec  # no age bias in who is moved
+        else:
+            # the intervention is off
+            quarantine_sicks = 0
+            if sum(Q_vec - Q_quarantined) > 0:
+                # there are some people in the quarantined who are still infectious (not moved to hospitalisation yet
+                quarantined_sicks_sendback = Q_vec - Q_quarantined
 
         # ICU capacity
         if total_H > 0:  # can't divide by 0
@@ -210,7 +220,7 @@ class DeterministicCompartmentalModel(Model):
         dydt2d[Config.compartment_index['E'], :] = (scenario_dict["transmission_reduction_factor"] * beta * S_vec * infection_total - E_latent)
 
         # I
-        dydt2d[Config.compartment_index['I'], :] = (self.p_symptomatic * E_latent - I_removed - quarantine_sicks)
+        dydt2d[Config.compartment_index['I'], :] = (self.p_symptomatic * E_latent - I_removed - quarantine_sicks + quarantined_sicks_sendback)
 
         # A
         A_removed = removal_rate * A_vec
@@ -259,7 +269,7 @@ class DeterministicCompartmentalModel(Model):
         dydt2d[Config.compartment_index['O'], :] = offsite
 
         # Q
-        dydt2d[Config.compartment_index['Q'], :] = quarantine_sicks - Q_quarantined
+        dydt2d[Config.compartment_index['Q'], :] = quarantine_sicks - Q_quarantined - quarantined_sicks_sendback
 
         # here the ICU implementation involves as np.minimum TODO: simulate an experiment for the people needing care below the the actual ICU capacity and observe if there is any dubious behaviour
 
@@ -336,10 +346,24 @@ class DeterministicCompartmentalModel(Model):
         # allow two implementation where one the initial seeds are fixed throughout
         # and the second one where initial exposed/symp/asymp are input as arrays
         generated_params_df = self.generate_epidemic_parameter_ranges(num_iterations)
-        lazy_sols = []
-        sols_raw = {} # raw output for solutions
+        # lazy_sols = []
+        # for index, row in generated_params_df.iterrows():
+        #     lazy_result = dask.delayed(self.run_model)(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
+        #                                                latent_rate=row['latentRate'],
+        #                                                removal_rate=row['removalRate'],
+        #                                                hosp_rate=row['hospRate'],
+        #                                                death_rate_ICU=row['deathRateICU'],
+        #                                                death_rate_no_ICU=row['deathRateNoICU'],
+        #                                                initial_symp = initial_symp,
+        #                                                initial_asymp = initial_asymp,
+        #                                                )
+        #     lazy_sols.append(lazy_result)
+        # with dask.config.set(scheduler='processes', num_workers=multiprocessing.cpu_count()):
+        #     with ProgressBar():
+        #         sols = dask.compute(*lazy_sols)
+        sols = []
         for index, row in generated_params_df.iterrows():
-            lazy_result = dask.delayed(self.run_model)(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
+            sol = self.run_model(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
                                                        latent_rate=row['latentRate'],
                                                        removal_rate=row['removalRate'],
                                                        hosp_rate=row['hospRate'],
@@ -348,10 +372,7 @@ class DeterministicCompartmentalModel(Model):
                                                        initial_symp = initial_symp,
                                                        initial_asymp = initial_asymp,
                                                        )
-            lazy_sols.append(lazy_result)
-        with dask.config.set(scheduler='processes', num_workers=multiprocessing.cpu_count()):
-            with ProgressBar():
-                sols = dask.compute(*lazy_sols)
+            sols.append(sol)
         simulation_result_frame = pd.concat(sols, axis=0)
         return simulation_result_frame
 
