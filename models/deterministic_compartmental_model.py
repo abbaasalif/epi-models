@@ -1,5 +1,5 @@
 from .model import Model,ModelId, ModelRunner
-from .deterministic_compartmental_model_scenario import DeterministicCompartmentalModelScenario
+from .deterministic_compartmental_model_scenario import DeterministicCompartmentalModelScenario, SingleInterventionScenario
 import numpy as np
 from .config.compartmental_model import Config
 import pandas as pd
@@ -9,6 +9,7 @@ from dask.diagnostics import ProgressBar
 import multiprocessing
 from .params import CampParams
 from typing import Tuple
+from math import ceil, floor
 
 
 class DeterministicCompartmentalModel(Model):
@@ -209,8 +210,8 @@ class DeterministicCompartmentalModel(Model):
         # Laying out differential equations:
         # S
         # Intervention: shielding
-        infection_I = np.dot(self.infection_matrix, I_vec)
-        infection_A = np.dot(self.infection_matrix, A_vec)
+        infection_I = np.dot(scenario_dict["infection_matrix"], I_vec)
+        infection_A = np.dot(scenario_dict["infection_matrix"], A_vec)
         infection_total = (infection_I + self.AsymptInfectiousFactor * infection_A)
         offsite = remove_high_risk_people / S_removal * S_vec
         # Intervention: transimission reduction via better hygiene
@@ -341,29 +342,15 @@ class DeterministicCompartmentalModel(Model):
         assert len(col_names) == len(data_store_df.columns)
         return data_store_df
 
-    def run_single_simulation(self, scenario, num_iterations=1000, t_stop=200, initial_exposed=1, initial_symp=1, initial_asymp=1):
+    def run_single_simulation(self, scenario, generated_params_df=None, t_stop=200, initial_exposed=1, initial_symp=1, initial_asymp=1):
         # TODO: swap this for a dask distributed client so it is non-blocking
         # allow two implementation where one the initial seeds are fixed throughout
         # and the second one where initial exposed/symp/asymp are input as arrays
-        generated_params_df = self.generate_epidemic_parameter_ranges(num_iterations)
-        # lazy_sols = []
-        # for index, row in generated_params_df.iterrows():
-        #     lazy_result = dask.delayed(self.run_model)(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
-        #                                                latent_rate=row['latentRate'],
-        #                                                removal_rate=row['removalRate'],
-        #                                                hosp_rate=row['hospRate'],
-        #                                                death_rate_ICU=row['deathRateICU'],
-        #                                                death_rate_no_ICU=row['deathRateNoICU'],
-        #                                                initial_symp = initial_symp,
-        #                                                initial_asymp = initial_asymp,
-        #                                                )
-        #     lazy_sols.append(lazy_result)
-        # with dask.config.set(scheduler='processes', num_workers=multiprocessing.cpu_count()):
-        #     with ProgressBar():
-        #         sols = dask.compute(*lazy_sols)
-        sols = []
+        if generated_params_df is None:
+            generated_params_df = self.generate_epidemic_parameter_ranges(1000) #default run 1000 iterations
+        lazy_sols = []
         for index, row in generated_params_df.iterrows():
-            sol = self.run_model(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
+            lazy_result = dask.delayed(self.run_model)(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
                                                        latent_rate=row['latentRate'],
                                                        removal_rate=row['removalRate'],
                                                        hosp_rate=row['hospRate'],
@@ -372,21 +359,49 @@ class DeterministicCompartmentalModel(Model):
                                                        initial_symp = initial_symp,
                                                        initial_asymp = initial_asymp,
                                                        )
-            sols.append(sol)
+            lazy_sols.append(lazy_result)
+        with dask.config.set(scheduler='processes', num_workers=multiprocessing.cpu_count()):
+            with ProgressBar():
+                sols = dask.compute(*lazy_sols)
+        # sols = []
+        # for index, row in generated_params_df.iterrows():
+        #     sol = self.run_model(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
+        #                                                latent_rate=row['latentRate'],
+        #                                                removal_rate=row['removalRate'],
+        #                                                hosp_rate=row['hospRate'],
+        #                                                death_rate_ICU=row['deathRateICU'],
+        #                                                death_rate_no_ICU=row['deathRateNoICU'],
+        #                                                initial_symp = initial_symp,
+        #                                                initial_asymp = initial_asymp,
+        #                                                )
+        #     sols.append(sol)
         simulation_result_frame = pd.concat(sols, axis=0)
         return simulation_result_frame
 
-    def run_multiple_simulations(self):
-        pass
+    def run_multiple_simulations(self, scenario_dict, generated_params_df=None, t_stop=200, initial_exposed=1, initial_symp=1, initial_asymp=1):
+        if generated_params_df is None:
+            generated_params_df = self.generate_epidemic_parameter_ranges(1000) # default run 1000 iterations
+        simulation_result_frame_dict = {}
+        for scenario_key, scenario in scenario_dict.items():
+            simulation_result_frame_dict[scenario_key] = self.run_single_simulation(scenario, generated_params_df)
+        return simulation_result_frame_dict
 
 
 class DeterministicCompartmentalModelRunner(ModelRunner):
-    def __init__(self, camp_params: CampParams):
+    def __init__(self, camp_params: CampParams, num_iterations=1000):
         super().__init__()
         self.model = DeterministicCompartmentalModel(camp_params)
-        self.do_nothing_scenario = DeterministicCompartmentalModelScenario(self.model.population_size)
+        self.generated_params_df = self.model. generate_epidemic_parameter_ranges(num_iterations)
+        self.do_nothing_scenario = DeterministicCompartmentalModelScenario(self.model.population_size, self.model.infection_matrix)
         camp_baseline_params = self.process_camp_params(camp_params)
-        self.camp_baseline = DeterministicCompartmentalModelScenario(self.model.population_size, *camp_baseline_params)
+        self.camp_params = camp_params
+        self.camp_baseline = DeterministicCompartmentalModelScenario(self.model.population_size, self.model.infection_matrix, *camp_baseline_params)
+
+    def compute_first_n_category_of_population(self, offsite_removal_number):
+        population_vector_reversed = np.cumsum(np.flip(self.model.population_vector * self.model.population_size))
+        first_high_risk_category_n = (
+                next((i for i, v in enumerate(population_vector_reversed) if v > offsite_removal_number), 0) + 1)
+        return first_high_risk_category_n
 
     def process_camp_params(self, camp_params):
         """generate transmission_reduction_factor=1, isolation_capacity=0, remove_symptomatic_rate=0, remove_high_risk_rate=0, first_high_risk_category_n=2, icu_capacity=6 from the camp params"""
@@ -418,19 +433,203 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
             remove_high_risk_rate = 0
         else:
             # base on remove high risk number to guess which age categories are being removed
-            population_vector_reversed = np.cumsum(np.flip(self.model.population_vector * self.model.population_size))
-            first_high_risk_category_n = (
-                        next((i for i, v in enumerate(population_vector_reversed) if v > offsite_removal_number), 0) + 1)
-            remove_high_risk_rate = int(self.model.population_size)*0.01
+            first_high_risk_category_n = self.compute_first_n_category_of_population(offsite_removal_number)
+            remove_high_risk_rate = int(self.model.population_size)*0.01 # TODO: change this number to be a more conservative estimate
 
         icu_capacity = int(camp_params.number_of_ICU_beds)
         return transmission_reduction_factor, isolation_capacity, remove_symptomatic_rate, remove_high_risk_rate, first_high_risk_category_n, icu_capacity
 
     def run_baselines(self):
         # we run donothing baseline and camp baseline respectively
-        do_nothing_baseline = self.model.run_single_simulation(self.do_nothing_scenario)
-        camp_baseline = self.model.run_single_simulation(self.camp_baseline)
+        do_nothing_baseline = self.model.run_single_simulation(self.do_nothing_scenario, self.generated_params_df)
+        camp_baseline = self.model.run_single_simulation(self.camp_baseline, self.generated_params_df)
         return do_nothing_baseline, camp_baseline
+
+    @staticmethod
+    def compute_reaction_delay(camp_baseline):
+        # two reaction delay time params from here:
+        # 1. when number of symptomatically infected patients reach a thershold (0.01%)
+        # 2. when the first death because of COVID occurs
+        pass
+
+    def run_better_hygiene_scenarios(self):
+        # run better hygiene intervention compared to the current camp baseline at one month, three months and six months
+        # relative increase 5% 10% and 15%
+        camp_base_line_factor = self.camp_baseline.baseline_param_dict["transmission_reduction_factor"]
+        camp_five_percent_better = camp_base_line_factor * 0.95
+        camp_ten_percent_better = camp_base_line_factor * 0.9
+        camp_fifteen_percent_better = camp_base_line_factor * 0.85
+        intervention_start_time = [0]
+        duration_one_month_end_time = [30]
+        duration_three_month_end_time = [90]
+        duration_six_month_end_time = [180]
+        effectiveness_range = {'5%':camp_five_percent_better, '10%':camp_ten_percent_better, '15%': camp_fifteen_percent_better}
+        end_times_range = {'one_month': duration_one_month_end_time, 'three_month': duration_three_month_end_time, 'six_month': duration_six_month_end_time}
+        intervention_scenarios_generated = {}
+        for effectiveness_name, effectiveness_value in effectiveness_range.items():
+            for end_times_name, end_times_value in end_times_range.items():
+                scenario_id = "|".join([effectiveness_name, end_times_name])
+                intervention_scenarios_generated[scenario_id] = SingleInterventionScenario(self.model.population_size,
+                                                                               intervention_start_time,
+                                                                               end_times_value,
+                                                                               self.model.infection_matrix,
+                                                                               transmission_reduction_factor_inter=effectiveness_value,
+                                                                               camp_specific_baseline_scenario=self.camp_baseline)
+        better_hygiene_intervention_result = self.model.run_multiple_simulations(intervention_scenarios_generated, self.generated_params_df)
+        return better_hygiene_intervention_result
+
+    def run_increase_icu_capacity_scenarios(self):
+        # use 0.1% total population as the baseline
+        current_capacity = self.camp_baseline.baseline_param_dict['icu_capacity']
+        intervention_start_time = [0]
+        intervention_end_time = [200]
+        ideal_number_of_icus = ceil(self.model.population_size * 0.001)
+        intervention_scenarios_generated = {}
+        if current_capacity < ideal_number_of_icus * 0.5:
+            intervention_scenarios_generated['increase_to_ideal_icu_capacity'] = SingleInterventionScenario(self.model.population_size,
+                                       intervention_start_time,
+                                       intervention_end_time,
+                                       self.model.infection_matrix,
+                                       isolation_capacity_inter=ideal_number_of_icus,
+                                       camp_specific_baseline_scenario=self.camp_baseline)
+        else:
+            capacity_range = {"increase_by_50%": ceil(current_capacity*1.5), "increase_by_100%":ceil(current_capacity*2.0)}
+            for capacity_name, capacity in capacity_range.items():
+                intervention_scenarios_generated[capacity_name] = SingleInterventionScenario(self.model.population_size,
+                                       intervention_start_time,
+                                       intervention_end_time,
+                                       self.model.infection_matrix,
+                                       isolation_capacity_inter=capacity,
+                                       camp_specific_baseline_scenario=self.camp_baseline)
+        increase_icu_intervention_result = self.model.run_multiple_simulations(intervention_scenarios_generated,
+                                                                                 self.generated_params_df)
+        return increase_icu_intervention_result
+
+    def run_remove_more_high_risk_residents_scenarios(self):
+        offsite_removal_number = int(self.camp_params.high_risk_offsite_number)
+        # explore rate of moving people offsite in 1 week/3 weeks/6 weeks
+        intervention_start_time = [0]
+        duration_one_week_end_time = [7]
+        duration_three_weeks_end_time = [21]
+        duration_six_weeks_end_time = [42]
+        number_of_people_with_comorbidity = int(self.camp_params.comorbidity_number)
+        number_of_people_in_last_age_compartment = int(self.model.population_size*self.model.population_vector[-1])
+        number_of_people_in_last_two_age_compartments = int(self.model.population_size * (self.model.population_vector[-1]+self.model.population_vector[-2]))
+        intervention_scenarios_generated = {}
+        if offsite_removal_number < number_of_people_in_last_age_compartment + number_of_people_with_comorbidity:
+            # then here we recommend moving everyone from the last age compartment to reduce death
+            new_offsite_removal_number = number_of_people_in_last_age_compartment + number_of_people_with_comorbidity
+            first_high_risk_category_n = self.compute_first_n_category_of_population(new_offsite_removal_number)
+            rate_removal_one_week = floor(new_offsite_removal_number / 7)
+            rate_removal_three_week = floor(new_offsite_removal_number / 21)
+            rate_removal_six_week = floor(new_offsite_removal_number / 42)
+        elif offsite_removal_number < number_of_people_in_last_two_age_compartments + number_of_people_with_comorbidity:
+            # then here we recommend moving everyone from the last 2 age compartments to reduce death
+            new_offsite_removal_number = number_of_people_in_last_two_age_compartments + number_of_people_with_comorbidity
+            first_high_risk_category_n = self.compute_first_n_category_of_population(new_offsite_removal_number)
+            rate_removal_one_week = floor(new_offsite_removal_number / 7)
+            rate_removal_three_week = floor(new_offsite_removal_number / 21)
+            rate_removal_six_week = floor(new_offsite_removal_number / 42)
+        intervention_scenarios_generated["removal_one_week"] = SingleInterventionScenario(self.model.population_size,
+                                                                                          intervention_start_time,
+                                                                                          duration_one_week_end_time,
+                                                                                          self.model.infection_matrix,
+                                                                                          first_high_risk_category_n_inter=first_high_risk_category_n,
+                                                                                          remove_high_risk_rate_inter=rate_removal_one_week,
+                                                                                          camp_specific_baseline_scenario=self.camp_baseline)
+        intervention_scenarios_generated["removal_three_week"] = SingleInterventionScenario(self.model.population_size,
+                                                                                          intervention_start_time,
+                                                                                          duration_three_weeks_end_time,
+                                                                                          self.model.infection_matrix,
+                                                                                          first_high_risk_category_n_inter=first_high_risk_category_n,
+                                                                                          remove_high_risk_rate_inter=rate_removal_three_week,
+                                                                                          camp_specific_baseline_scenario=self.camp_baseline)
+        intervention_scenarios_generated["removal_six_week"] = SingleInterventionScenario(self.model.population_size,
+                                                                                            intervention_start_time,
+                                                                                            duration_six_weeks_end_time,
+                                                                                            self.model.infection_matrix,
+                                                                                            first_high_risk_category_n_inter=first_high_risk_category_n,
+                                                                                            remove_high_risk_rate_inter=rate_removal_six_week,
+                                                                                            camp_specific_baseline_scenario=self.camp_baseline)
+
+        increase_remove_high_risk_result = self.model.run_multiple_simulations(intervention_scenarios_generated,
+                                                                               self.generated_params_df)
+        return increase_remove_high_risk_result
+
+    def run_isolate_symptomatic_scenario(self):
+        isolation_capacity = int(self.camp_params.isolation_capacity)
+        # if the isolation capacity is below camp population * 0.005 then experiment with camp population * 0.005 and if the isolation capacity is above camp population * 0.005, exepriment with current capacity and 1.5 the original capacity
+        if isolation_capacity == 0:
+            experiment_capacity = [floor(self.model.population_size*0.0025), floor(self.model.population_size*0.005)]
+        elif isolation_capacity<self.model.population_size*0.005:
+            experiment_capacity = [isolation_capacity, floor(self.model.population_size*0.005)]
+        else:
+            experiment_capacity = [isolation_capacity, floor(isolation_capacity*1.5)]
+        capacity_range = {'low_bound': experiment_capacity[0], "upper_bound": experiment_capacity[1]}
+        # experiment with a range of community surveillance coverage
+        # ref https://www.thelancet.com/journals/lanplh/article/PIIS2542-5196(20)30221-7/fulltext we can reference the number of CHVs (community health volunteers) for this
+        # this detection number needs to be arrived factoring in the syndromatic detection accuracy of COVID-19
+        experiment_rate_detection= [self.model.population_size*0.0005, self.model.population_size*0.001, self.model.population_size*0.0025]
+        rate_range = {"0.05%": experiment_rate_detection[0], "0.1%": experiment_rate_detection[1], "0.25%": experiment_rate_detection[2]}
+        # let the intervention run on for different time periods (50, 100, 200)
+        intervention_start_time = [0]
+        duration_50_end_time = [50]
+        duration_100_end_time = [100]
+        duration_200_end_time = [280]
+        end_times_range = {'fifty_day': duration_50_end_time, 'one_hundred_day': duration_100_end_time,
+                           'two_hundred_day': duration_200_end_time}
+        intervention_scenarios_generated = {}
+        for capacity_name, capacity_value in capacity_range.items():
+            for rate_name, rate_value in rate_range.items():
+                for end_times_name, end_times_value in end_times_range.items():
+                    scenario_id = "|".join([capacity_name, rate_name, end_times_name])
+                    intervention_scenarios_generated[scenario_id] = SingleInterventionScenario(
+                        self.model.population_size,
+                        intervention_start_time,
+                        end_times_value,
+                        self.model.infection_matrix,
+                        isolation_capacity_inter=capacity_value,
+                        remove_symptomatic_rate_inter=rate_value,
+                        camp_specific_baseline_scenario=self.camp_baseline)
+        better_isolation_intervention_result = self.model.run_multiple_simulations(intervention_scenarios_generated,
+                                                                                 self.generated_params_df)
+        return better_isolation_intervention_result
+
+    def run_shielding_scenario(self):
+        # check if there is ability to shield
+        if self.camp_params.ability_to_shield=="true":
+            intervention_start_time = [0]
+            duration_50_end_time = [50]
+            duration_100_end_time = [100]
+            duration_200_end_time = [280]
+            end_times_range = {'fifty_day': duration_50_end_time, 'one_hundred_day': duration_100_end_time,
+                               'two_hundred_day': duration_200_end_time}
+            intervention_scenarios_generated = {}
+            for end_times_name, end_times_value in end_times_range.items():
+                intervention_scenarios_generated[end_times_name] = SingleInterventionScenario(
+                    self.model.population_size,
+                    intervention_start_time,
+                    end_times_value,
+                    self.model.infection_matrix,
+                    apply_shielding=True,
+                    camp_specific_baseline_scenario=self.camp_baseline)
+            shielding_intervention_result = self.model.run_multiple_simulations(intervention_scenarios_generated,
+                                                                                 self.generated_params_df)
+            return shielding_intervention_result
+        else:
+            return None
+
+
+    def run_different_scenarios(self):
+        """mainly for testing purpose"""
+        better_hygiene_intervention_result = self.run_better_hygiene_scenarios()
+        increase_icu_intervention_result = self.run_increase_icu_capacity_scenarios()
+        increase_remove_high_risk_result = self.run_remove_more_high_risk_residents_scenarios()
+        better_isolation_intervention_result = self.run_isolate_symptomatic_scenario()
+        shielding_intervention_result = self.run_shielding_scenario()
+        return better_hygiene_intervention_result, increase_icu_intervention_result, increase_remove_high_risk_result, \
+               better_isolation_intervention_result, shielding_intervention_result
+
 
 
 
