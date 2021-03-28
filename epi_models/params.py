@@ -1,5 +1,6 @@
 import json
 
+
 class CampParams(object):
     def __init__(self, input_params: dict):
         for k, v in input_params.items():
@@ -21,7 +22,9 @@ class CampParams(object):
 
     @classmethod
     def load_from_db(cls, db_query_object):
-        assert len(db_query_object) == 1, "make suer the query only returns one object at a time"
+        assert (
+            len(db_query_object) == 1
+        ), "make suer the query only returns one object at a time"
         input_params = db_query_object.__dict__
         return cls(input_params)
 
