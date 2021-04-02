@@ -1,11 +1,8 @@
-import multiprocessing
 from math import ceil, floor
 from typing import Tuple
 
-import dask
 import numpy as np
 import pandas as pd
-from dask.diagnostics import ProgressBar
 from scipy.integrate import ode
 
 from .config.compartmental_model import Config
@@ -603,16 +600,15 @@ class DeterministicCompartmentalModel(Model):
         initial_symp=1,
         initial_asymp=1,
     ):
-        # TODO: swap this for a dask distributed client so it is non-blocking
         # allow two implementation where one the initial seeds are fixed throughout
         # and the second one where initial exposed/symp/asymp are input as arrays
         if generated_params_df is None:
             generated_params_df = self.generate_epidemic_parameter_ranges(
                 1000
             )  # default run 1000 iterations
-        lazy_sols = []
+        sols = []
         for index, row in generated_params_df.iterrows():
-            lazy_result = dask.delayed(self.run_model)(
+            sol = self.run_model(
                 scenario=scenario,
                 t_stop=t_stop,
                 r0=row["R0"],
@@ -625,24 +621,7 @@ class DeterministicCompartmentalModel(Model):
                 initial_symp=initial_symp,
                 initial_asymp=initial_asymp,
             )
-            lazy_sols.append(lazy_result)
-        with dask.config.set(
-            scheduler="processes", num_workers=multiprocessing.cpu_count()
-        ):
-            with ProgressBar():
-                sols = dask.compute(*lazy_sols)
-        # sols = []
-        # for index, row in generated_params_df.iterrows():
-        #     sol = self.run_model(scenario=scenario, t_stop=t_stop, r0=row["R0"], beta=row["beta"],
-        #                                                latent_rate=row['latentRate'],
-        #                                                removal_rate=row['removalRate'],
-        #                                                hosp_rate=row['hospRate'],
-        #                                                death_rate_ICU=row['deathRateICU'],
-        #                                                death_rate_no_ICU=row['deathRateNoICU'],
-        #                                                initial_symp = initial_symp,
-        #                                                initial_asymp = initial_asymp,
-        #                                                )
-        #     sols.append(sol)
+            sols.append(sol)
         simulation_result_frame = pd.concat(sols, axis=0)
         return simulation_result_frame
 
