@@ -248,3 +248,56 @@ def test_intervention_isolation(instantiate_runner, camp_params):
 
     # testing deaths is lesser in isolation scenarios than do nothing
     assert_array_less(isolation_deaths, do_nothing_deaths)
+
+
+def test_camp_baselines_with_do_nothing(instantiate_runner, camp_params):
+    runner = instantiate_runner
+    do_nothing_baseline, camp_baseline = runner.run_baselines()
+    (
+        better_hygiene_intervention_result,
+        increase_icu_intervention_result,
+        increase_remove_high_risk_result,
+        better_isolation_intervention_result,
+        shielding_intervention_result,
+    ) = runner.run_different_scenarios()
+    runner.run_better_hygiene_scenarios()
+    camp_params = camp_params
+    do_nothing_baseline = do_nothing_baseline * camp_params.total_population
+    camp_baseline = camp_baseline * camp_params.total_population
+    sim_groups = do_nothing_baseline.groupby("R0")
+    sim_groups_camp = camp_baseline.groupby("R0")
+    do_nothing_infected = 0
+    for index, group in sim_groups:
+        do_nothing_infected = group["Infected (symptomatic)"][1:31]
+    do_nothing_hospitalised = 0
+    for index, group in sim_groups:
+        do_nothing_hospitalised = group["Hospitalised"][1:31]
+    do_nothing_critical = 0
+    for index, group in sim_groups:
+        do_nothing_critical = group["Critical"][1:31]
+    do_nothing_deaths = 0
+    for index, group in sim_groups:
+        do_nothing_deaths = group["Deaths"][1:31]
+    camp_baseline_infected = 0
+    for index, group in sim_groups_camp:
+        camp_baseline_infected = group["Infected (symptomatic)"][1:31]
+    camp_baseline_hospitalised = 0
+    for index, group in sim_groups_camp:
+        camp_baseline_hospitalised = group["Hospitalised"][1:31]
+    camp_baseline_critical = 0
+    for index, group in sim_groups_camp:
+        camp_baseline_critical = group["Critical"][1:31]
+    camp_baseline_deaths = 0
+    for index, group in sim_groups_camp:
+        camp_baseline_deaths = group["Deaths"][1:31]
+    # testing infected is lesser in isolation scenarios than do nothing
+    assert_array_less(camp_baseline_infected, do_nothing_infected)
+
+    # testing hospitalised is lesser in isolation scenarios than do nothing
+    assert_array_less(camp_baseline_hospitalised, do_nothing_hospitalised)
+
+    # testing critical is lesser in isolation scenarios than do nothing
+    assert_array_less(camp_baseline_critical, do_nothing_critical)
+
+    # testing deaths is lesser in isolation scenarios than do nothing
+    assert_array_less(camp_baseline_deaths, do_nothing_deaths)
