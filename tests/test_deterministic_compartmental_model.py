@@ -8,7 +8,7 @@ from epi_models import CampParams, DeterministicCompartmentalModelRunner
 
 @pytest.fixture
 def instantiate_runner():
-    os.chdir("D://OneDrive//Documents//AIforGood//epi-model//epi-models")
+    os.chdir("..")
     camp_params = CampParams.load_from_json("epi_models//config//sample_input.json")
     num_iterations = 1
     return DeterministicCompartmentalModelRunner(
