@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 from numpy.testing import assert_array_less
@@ -15,8 +16,7 @@ from epi_models import (
 @pytest.fixture
 def instantiate_runner():
     result_set = {}
-    base_dir = "D://OneDrive//Documents//AIforGood//epi-model//epi-models"  # enter your base directory here
-    os.chdir(base_dir)
+    base_dir = Path(os.path.dirname(__file__))
     camp_params = CampParams.load_from_json(
         base_dir + "//epi_models//config//sample_input.json"
     )
