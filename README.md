@@ -1,5 +1,5 @@
 <html>
-<div align="center">
+<div align="left">
 	<br>
 		<img src="coverage.svg" width="80" height="40" alt="Click to see the source">
 	</a>
