@@ -22,8 +22,8 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-*.coverage/
-tests/.coverage/
+.coverage
+tests/.coverage
 __pycache__/
 tests/__pycache__/
 .pytest_cache/
