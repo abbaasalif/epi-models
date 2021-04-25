@@ -14,29 +14,16 @@ from epi_models import (
 
 @pytest.fixture
 def instantiate_runner():
-    base_dir = os.chdir(
-        "D://OneDrive//Documents//AIforGood//epi-model//epi-models"
-    )  # enter your base directory here
+    result_set = {}
+    base_dir = "D://OneDrive//Documents//AIforGood//epi-model//epi-models"  # enter your base directory here
+    os.chdir(base_dir)
     camp_params = CampParams.load_from_json(
         base_dir + "//epi_models//config//sample_input.json"
     )
     num_iterations = 1
-    return DeterministicCompartmentalModelRunner(
+    runner = DeterministicCompartmentalModelRunner(
         camp_params, num_iterations=num_iterations
     )
-
-
-@pytest.fixture
-def camp_params():
-    os.chdir("D://OneDrive//Documents//AIforGood//epi-model//epi-models")
-    camp_parameters = CampParams.load_from_json(
-        ".//epi_models//config//sample_input.json"
-    )
-    return camp_parameters
-
-
-def test_individual_age_compartments(instantiate_runner, camp_params):
-    runner = instantiate_runner
     do_nothing_baseline, camp_baseline = runner.run_baselines()
     (
         better_hygiene_intervention_result,
@@ -46,9 +33,18 @@ def test_individual_age_compartments(instantiate_runner, camp_params):
         shielding_intervention_result,
     ) = runner.run_different_scenarios()
     runner.run_better_hygiene_scenarios()
-    camp_params = camp_params
     do_nothing_baseline = do_nothing_baseline * camp_params.total_population
     camp_baseline = camp_baseline * camp_params.total_population
+    result_set["do_nothing_baseline"] = do_nothing_baseline
+    result_set["camp_baseline"] = camp_baseline
+    result_set["camp_params"] = camp_params
+    result_set["generated_params_df"] = runner.generated_params_df
+    return result_set
+
+
+def test_individual_age_compartments(instantiate_runner):
+    result_set = instantiate_runner
+    do_nothing_baseline = result_set["do_nothing_baseline"]
     for j in [
         "Susceptible",
         "Exposed",
@@ -76,21 +72,11 @@ def test_individual_age_compartments(instantiate_runner, camp_params):
             )
 
 
-def test_individual_compartment(instantiate_runner, camp_params):
-    runner = instantiate_runner
-    do_nothing_baseline, camp_baseline = runner.run_baselines()
-    (
-        better_hygiene_intervention_result,
-        increase_icu_intervention_result,
-        increase_remove_high_risk_result,
-        better_isolation_intervention_result,
-        shielding_intervention_result,
-    ) = runner.run_different_scenarios()
-    runner.run_better_hygiene_scenarios()
-    camp_params = camp_params
-    do_nothing_baseline = do_nothing_baseline * camp_params.total_population
-    camp_baseline = camp_baseline * camp_params.total_population
+def test_individual_compartment(instantiate_runner):
     sum = 0
+    result_set = instantiate_runner
+    do_nothing_baseline = result_set["do_nothing_baseline"]
+    camp_params = result_set["camp_params"]
     for j in [
         "Susceptible",
         "Exposed",
@@ -109,21 +95,10 @@ def test_individual_compartment(instantiate_runner, camp_params):
         assert_almost_equal(sum[i], camp_params.total_population)
 
 
-def test_intervention_better_hygiene(instantiate_runner, camp_params):
-    runner = instantiate_runner
-    num_iterations = 1
-    do_nothing_baseline, camp_baseline = runner.run_baselines()
-    (
-        better_hygiene_intervention_result,
-        increase_icu_intervention_result,
-        increase_remove_high_risk_result,
-        better_isolation_intervention_result,
-        shielding_intervention_result,
-    ) = runner.run_different_scenarios()
-    runner.run_better_hygiene_scenarios()
-    camp_params = camp_params
-    do_nothing_baseline = do_nothing_baseline * camp_params.total_population
-    camp_baseline = camp_baseline * camp_params.total_population
+def test_intervention_better_hygiene(instantiate_runner):
+    result_set = instantiate_runner
+    result_set["do_nothing_baseline"]
+    camp_params = result_set["camp_params"]
     sim_groups = do_nothing_baseline.groupby("R0")
     model = DeterministicCompartmentalModel(camp_params, num_iterations=num_iterations)
     better_hygiene_6_month = SingleInterventionScenario(
@@ -180,9 +155,11 @@ def test_intervention_better_hygiene(instantiate_runner, camp_params):
     assert_array_less(better_hygiene_deaths, do_nothing_deaths)
 
 
-def test_intervention_isolation(instantiate_runner, camp_params):
-    runner = instantiate_runner
-    num_iterations = 1
+def test_intervention_isolation(instantiate_runner):
+    result_set = instantiate_runner
+    result_set["do_nothing_baseline"]
+    camp_params = result_set["camp_params"]
+    sim_groups = do_nothing_baseline.groupby("R0")
     do_nothing_baseline, camp_baseline = runner.run_baselines()
     (
         better_hygiene_intervention_result,
@@ -250,20 +227,10 @@ def test_intervention_isolation(instantiate_runner, camp_params):
     assert_array_less(isolation_deaths, do_nothing_deaths)
 
 
-def test_camp_baselines_with_do_nothing(instantiate_runner, camp_params):
-    runner = instantiate_runner
-    do_nothing_baseline, camp_baseline = runner.run_baselines()
-    (
-        better_hygiene_intervention_result,
-        increase_icu_intervention_result,
-        increase_remove_high_risk_result,
-        better_isolation_intervention_result,
-        shielding_intervention_result,
-    ) = runner.run_different_scenarios()
-    runner.run_better_hygiene_scenarios()
-    camp_params = camp_params
-    do_nothing_baseline = do_nothing_baseline * camp_params.total_population
-    camp_baseline = camp_baseline * camp_params.total_population
+def test_camp_baselines_with_do_nothing(instantiate_runner):
+    result_set = instantiate_runner
+    result_set["do_nothing_baseline"]
+    camp_baseline = result_set["camp_baseline"]
     sim_groups = do_nothing_baseline.groupby("R0")
     sim_groups_camp = camp_baseline.groupby("R0")
     do_nothing_infected = 0
