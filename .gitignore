@@ -22,7 +22,10 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.coverage/
+tests/.coverage/
+__pycache__/
+tests/__pycache__/
+.pytest_cache/
+tests/.pytest_cache/
 MANIFEST
-.coverage
-*__pycache__
-*.pytest_cache

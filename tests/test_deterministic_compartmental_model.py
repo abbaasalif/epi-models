@@ -16,9 +16,9 @@ from epi_models import (
 @pytest.fixture
 def instantiate_runner():
     result_set = {}
-    base_dir = Path(os.path.dirname(__file__))
+    base_dir = Path(os.path.dirname(__file__)).parents[0]
     camp_params = CampParams.load_from_json(
-        base_dir + "//epi_models//config//sample_input.json"
+        base_dir / "epi_models" / "config" / "sample_input.json"
     )
     num_iterations = 1
     runner = DeterministicCompartmentalModelRunner(
@@ -39,6 +39,7 @@ def instantiate_runner():
     result_set["camp_baseline"] = camp_baseline
     result_set["camp_params"] = camp_params
     result_set["generated_params_df"] = runner.generated_params_df
+    result_set["num_iterations"] = num_iterations
     return result_set
 
 
@@ -97,8 +98,9 @@ def test_individual_compartment(instantiate_runner):
 
 def test_intervention_better_hygiene(instantiate_runner):
     result_set = instantiate_runner
-    result_set["do_nothing_baseline"]
+    do_nothing_baseline = result_set["do_nothing_baseline"]
     camp_params = result_set["camp_params"]
+    num_iterations = result_set["num_iterations"]
     sim_groups = do_nothing_baseline.groupby("R0")
     model = DeterministicCompartmentalModel(camp_params, num_iterations=num_iterations)
     better_hygiene_6_month = SingleInterventionScenario(
@@ -109,7 +111,7 @@ def test_intervention_better_hygiene(instantiate_runner):
         transmission_reduction_factor_inter=0.7,
     )
     better_hygiene_6_month_results = model.run_single_simulation(
-        better_hygiene_6_month, generated_params_df=runner.generated_params_df
+        better_hygiene_6_month, generated_params_df=result_set["generated_params_df"]
     )
     better_hygiene_6_month_results = (
         camp_params.total_population * better_hygiene_6_month_results
@@ -157,21 +159,9 @@ def test_intervention_better_hygiene(instantiate_runner):
 
 def test_intervention_isolation(instantiate_runner):
     result_set = instantiate_runner
-    result_set["do_nothing_baseline"]
+    do_nothing_baseline = result_set["do_nothing_baseline"]
     camp_params = result_set["camp_params"]
-    sim_groups = do_nothing_baseline.groupby("R0")
-    do_nothing_baseline, camp_baseline = runner.run_baselines()
-    (
-        better_hygiene_intervention_result,
-        increase_icu_intervention_result,
-        increase_remove_high_risk_result,
-        better_isolation_intervention_result,
-        shielding_intervention_result,
-    ) = runner.run_different_scenarios()
-    runner.run_better_hygiene_scenarios()
-    camp_params = camp_params
-    do_nothing_baseline = do_nothing_baseline * camp_params.total_population
-    camp_baseline = camp_baseline * camp_params.total_population
+    num_iterations = result_set["num_iterations"]
     sim_groups = do_nothing_baseline.groupby("R0")
     model = DeterministicCompartmentalModel(camp_params, num_iterations=num_iterations)
     iso_6_month = SingleInterventionScenario(
@@ -183,7 +173,7 @@ def test_intervention_isolation(instantiate_runner):
         remove_symptomatic_rate_inter=10,
     )
     iso_6_month_results = model.run_single_simulation(
-        iso_6_month, generated_params_df=runner.generated_params_df
+        iso_6_month, generated_params_df=result_set["generated_params_df"]
     )
     iso_6_month_results = camp_params.total_population * iso_6_month_results
     iso_6_month_results_groups = iso_6_month_results.groupby("R0")
@@ -229,7 +219,7 @@ def test_intervention_isolation(instantiate_runner):
 
 def test_camp_baselines_with_do_nothing(instantiate_runner):
     result_set = instantiate_runner
-    result_set["do_nothing_baseline"]
+    do_nothing_baseline = result_set["do_nothing_baseline"]
     camp_baseline = result_set["camp_baseline"]
     sim_groups = do_nothing_baseline.groupby("R0")
     sim_groups_camp = camp_baseline.groupby("R0")
