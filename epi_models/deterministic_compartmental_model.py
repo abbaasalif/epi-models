@@ -159,7 +159,16 @@ class DeterministicCompartmentalModel(Model):
         # in toatl there are 11 disease compartments
         self.number_compartments = 11
         # 8 age compartments with 10 year gap in each
-        self.ages = ["0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70+"]
+        self.ages = [
+            "0_9",
+            "10_19",
+            "20_29",
+            "30_39",
+            "40_49",
+            "50_59",
+            "60_69",
+            "70_above",
+        ]
         self.age_categories = len(self.ages)
         self.age_limits = np.array([0, 10, 20, 30, 40, 50, 60, 70, 80], dtype=int)
         # 11 disease state compartments
@@ -212,6 +221,7 @@ class DeterministicCompartmentalModel(Model):
         self, num_iterations, scale=1, lb=1, seed=42
     ):
         """Generate ranges of parameters with input parameters as mean and some custom standard deviation around it default generate 1000 sets of parameters"""
+        # TODO: make this process deterministic so everytime the instantiation of the runner object is exactly the same use linspace rather than normal distribution if we want to break up the tasks into smaller chunks for distributed processing
         generated_params = {}
         np.random.seed(seed)
         generated_params["R0"] = np.random.normal(
@@ -545,7 +555,7 @@ class DeterministicCompartmentalModel(Model):
     ):
         """ to be run after a simulation to present simualtion results in a dataframe"""
         # setup column names
-        AGE_SEP = ": "  # separate compartment and age in column name
+        AGE_SEP = "_"  # separate compartment and age in column name
         disease_compartment_col_names = [name for name in Config.longname.values()]
         disease_age_compartment_col_names = [
             name + AGE_SEP + age
