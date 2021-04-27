@@ -40,6 +40,15 @@ def instantiate_runner():
     result_set["camp_params"] = camp_params
     result_set["generated_params_df"] = runner.generated_params_df
     result_set["num_iterations"] = num_iterations
+    result_set[
+        "better_hygiene_intervention_result"
+    ] = better_hygiene_intervention_result
+    result_set["increase_icu_intervention_result"] = increase_icu_intervention_result
+    result_set["increase_remove_high_risk_result"] = increase_remove_high_risk_result
+    result_set[
+        "better_isolation_intervention_result"
+    ] = better_isolation_intervention_result
+    result_set["shielding_intervention_result"] = shielding_intervention_result
     return result_set
 
 
