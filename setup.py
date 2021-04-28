@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="simulator-epi-models",
-    version="0.1.2",
+    version="0.1.3",
     description="Epi models used by the Simulator web app",
     long_description=README,
     long_description_content_type="text/markdown",

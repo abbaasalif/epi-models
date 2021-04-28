@@ -714,9 +714,9 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
             "3": 0.875,
         }
         interventions = [
-            camp_params.mask_wearing,
-            camp_params.hand_washing,
-            camp_params.social_distancing,
+            str(camp_params.mask_wearing),
+            str(camp_params.hand_washing),
+            str(camp_params.social_distancing),
         ]
         total_transmission_reduction = sum(
             [
