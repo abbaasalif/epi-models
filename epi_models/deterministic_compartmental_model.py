@@ -29,6 +29,7 @@ class DeterministicCompartmentalModel(Model):
             self.im_beta_list,
             self.largest_eigenvalue,
         ) = self.process_and_load_camp_parameters(camp_params)
+        self.num_iterations = num_iterations
 
     def id(self):
         return ModelId.DeterministicCompartmentalModel
@@ -571,6 +572,9 @@ class DeterministicCompartmentalModel(Model):
             "deathRateNoIcu",
         ]
         time_col_name = ["Time"]
+        # scale y_sum and y_out according to total population number N
+        y_sum = self.population_size * y_sum
+        y_out = self.population_size * y_out
         data_store = np.transpose(y_out)
         data_store_df = pd.DataFrame(
             data_store, columns=disease_age_compartment_col_names
@@ -582,6 +586,7 @@ class DeterministicCompartmentalModel(Model):
         data_store_df["hospRate"] = [hosp_rate] * len(time_range)
         data_store_df["deathRateICU"] = [death_rate_ICU] * len(time_range)
         data_store_df["deathRateNoIcu"] = [death_rate_no_ICU] * len(time_range)
+        # scale y sum according to total population number N
         aggregated_compartment_output = np.transpose(y_sum)
         data_store_df = pd.concat(
             [
@@ -614,7 +619,7 @@ class DeterministicCompartmentalModel(Model):
         # and the second one where initial exposed/symp/asymp are input as arrays
         if generated_params_df is None:
             generated_params_df = self.generate_epidemic_parameter_ranges(
-                1000
+                self.num_iterations
             )  # default run 1000 iterations
         sols = []
         for index, row in generated_params_df.iterrows():
@@ -646,7 +651,7 @@ class DeterministicCompartmentalModel(Model):
     ):
         if generated_params_df is None:
             generated_params_df = self.generate_epidemic_parameter_ranges(
-                1000
+                self.num_iterations
             )  # default run 1000 iterations
         simulation_result_frame_dict = {}
         for scenario_key, scenario in scenario_dict.items():
@@ -769,6 +774,14 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
         # 2. when the first death because of COVID occurs
         pass
 
+    @staticmethod
+    def parse_scenario_dict_of_frames(result_dict):
+        list_of_dfs = []
+        for scenario_suffix, scenario_df in result_dict.items():
+            scenario_df["Scenario_suffix"] = [scenario_suffix] * len(scenario_df)
+            list_of_dfs.append(scenario_df)
+        return pd.concat(list_of_dfs, axis=0)
+
     def run_better_hygiene_scenarios(self):
         # run better hygiene intervention compared to the current camp baseline at one month, three months and six months
         # relative increase 5% 10% and 15%
@@ -809,7 +822,7 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
         better_hygiene_intervention_result = self.model.run_multiple_simulations(
             intervention_scenarios_generated, self.generated_params_df
         )
-        return better_hygiene_intervention_result
+        return self.parse_scenario_dict_of_frames(better_hygiene_intervention_result)
 
     def run_increase_icu_capacity_scenarios(self):
         # use 0.1% total population as the baseline
@@ -848,7 +861,7 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
         increase_icu_intervention_result = self.model.run_multiple_simulations(
             intervention_scenarios_generated, self.generated_params_df
         )
-        return increase_icu_intervention_result
+        return self.parse_scenario_dict_of_frames(increase_icu_intervention_result)
 
     def run_remove_more_high_risk_residents_scenarios(self):
         offsite_removal_number = int(self.camp_params.high_risk_offsite_number)
@@ -935,7 +948,7 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
         increase_remove_high_risk_result = self.model.run_multiple_simulations(
             intervention_scenarios_generated, self.generated_params_df
         )
-        return increase_remove_high_risk_result
+        return self.parse_scenario_dict_of_frames(increase_remove_high_risk_result)
 
     def run_isolate_symptomatic_scenario(self):
         isolation_capacity = int(self.camp_params.isolation_capacity)
@@ -998,11 +1011,11 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
         better_isolation_intervention_result = self.model.run_multiple_simulations(
             intervention_scenarios_generated, self.generated_params_df
         )
-        return better_isolation_intervention_result
+        return self.parse_scenario_dict_of_frames(better_isolation_intervention_result)
 
     def run_shielding_scenario(self):
         # check if there is ability to shield
-        if self.camp_params.ability_to_shield == "true":
+        if self.camp_params.ability_to_shield is True:
             intervention_start_time = [0]
             duration_50_end_time = [50]
             duration_100_end_time = [100]
@@ -1027,12 +1040,14 @@ class DeterministicCompartmentalModelRunner(ModelRunner):
             shielding_intervention_result = self.model.run_multiple_simulations(
                 intervention_scenarios_generated, self.generated_params_df
             )
-            return shielding_intervention_result
+            return self.parse_scenario_dict_of_frames(shielding_intervention_result)
+        elif self.camp_params.ability_to_shield is False:
+            return pd.DataFrame()
         else:
-            return None
+            raise NotImplementedError
 
     def run_different_scenarios(self):
-        """mainly for testing purpose"""
+        """here we run all intervention scenarios possible in a batch"""
         better_hygiene_intervention_result = self.run_better_hygiene_scenarios()
         increase_icu_intervention_result = self.run_increase_icu_capacity_scenarios()
         increase_remove_high_risk_result = (
