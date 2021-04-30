@@ -33,8 +33,6 @@ def instantiate_runner():
         shielding_intervention_result,
     ) = runner.run_different_scenarios()
     runner.run_better_hygiene_scenarios()
-    do_nothing_baseline = do_nothing_baseline * camp_params.total_population
-    camp_baseline = camp_baseline * camp_params.total_population
     result_set["do_nothing_baseline"] = do_nothing_baseline
     result_set["camp_baseline"] = camp_baseline
     result_set["camp_params"] = camp_params
@@ -58,27 +56,27 @@ def test_individual_age_compartments(instantiate_runner):
     for j in [
         "Susceptible",
         "Exposed",
-        "Infected (symptomatic)",
-        "Asymptomatically Infected",
+        "Infected_symptomatic",
+        "Infected_asymptomatic",
         "Recovered",
         "Hospitalised",
         "Critical",
         "Deaths",
         "Offsite",
         "Quarantined",
-        "No ICU Care",
+        "No_ICU_Care",
     ]:
         for i in range(0, 201):
             assert_almost_equal(
                 do_nothing_baseline[j][i],
-                do_nothing_baseline[str(j) + ": 0-9"][i]
-                + do_nothing_baseline[str(j) + ": 10-19"][i]
-                + do_nothing_baseline[str(j) + ": 20-29"][i]
-                + do_nothing_baseline[str(j) + ": 30-39"][i]
-                + do_nothing_baseline[str(j) + ": 40-49"][i]
-                + do_nothing_baseline[str(j) + ": 50-59"][i]
-                + do_nothing_baseline[str(j) + ": 60-69"][i]
-                + do_nothing_baseline[str(j) + ": 70+"][i],
+                do_nothing_baseline[str(j) + "_0_9"][i]
+                + do_nothing_baseline[str(j) + "_10_19"][i]
+                + do_nothing_baseline[str(j) + "_20_29"][i]
+                + do_nothing_baseline[str(j) + "_30_39"][i]
+                + do_nothing_baseline[str(j) + "_40_49"][i]
+                + do_nothing_baseline[str(j) + "_50_59"][i]
+                + do_nothing_baseline[str(j) + "_60_69"][i]
+                + do_nothing_baseline[str(j) + "_70_above"][i],
             )
 
 
@@ -90,15 +88,15 @@ def test_individual_compartment(instantiate_runner):
     for j in [
         "Susceptible",
         "Exposed",
-        "Infected (symptomatic)",
-        "Asymptomatically Infected",
+        "Infected_symptomatic",
+        "Infected_asymptomatic",
         "Recovered",
         "Hospitalised",
         "Critical",
         "Deaths",
         "Offsite",
         "Quarantined",
-        "No ICU Care",
+        "No_ICU_Care",
     ]:
         sum += do_nothing_baseline[j]
     for i in range(0, 201):
@@ -122,13 +120,10 @@ def test_intervention_better_hygiene(instantiate_runner):
     better_hygiene_6_month_results = model.run_single_simulation(
         better_hygiene_6_month, generated_params_df=result_set["generated_params_df"]
     )
-    better_hygiene_6_month_results = (
-        camp_params.total_population * better_hygiene_6_month_results
-    )
     better_hygiene_6_month_groups = better_hygiene_6_month_results.groupby("R0")
     do_nothing_infected = 0
     for index, group in sim_groups:
-        do_nothing_infected = group["Infected (symptomatic)"][1:31]
+        do_nothing_infected = group["Infected_symptomatic"][1:31]
     do_nothing_hospitalised = 0
     for index, group in sim_groups:
         do_nothing_hospitalised = group["Hospitalised"][1:31]
@@ -140,7 +135,7 @@ def test_intervention_better_hygiene(instantiate_runner):
         do_nothing_deaths = group["Deaths"][1:31]
     better_hygiene_infected = 0
     for index, group in better_hygiene_6_month_groups:
-        better_hygiene_infected = group["Infected (symptomatic)"][1:31]
+        better_hygiene_infected = group["Infected_symptomatic"][1:31]
 
     better_hygiene_hospitalised = 0
     for index, group in better_hygiene_6_month_groups:
@@ -184,11 +179,10 @@ def test_intervention_isolation(instantiate_runner):
     iso_6_month_results = model.run_single_simulation(
         iso_6_month, generated_params_df=result_set["generated_params_df"]
     )
-    iso_6_month_results = camp_params.total_population * iso_6_month_results
     iso_6_month_results_groups = iso_6_month_results.groupby("R0")
     do_nothing_infected = 0
     for index, group in sim_groups:
-        do_nothing_infected = group["Infected (symptomatic)"][1:31]
+        do_nothing_infected = group["Infected_symptomatic"][1:31]
     do_nothing_hospitalised = 0
     for index, group in sim_groups:
         do_nothing_hospitalised = group["Hospitalised"][1:31]
@@ -200,7 +194,7 @@ def test_intervention_isolation(instantiate_runner):
         do_nothing_deaths = group["Deaths"][1:31]
     isolation_infected = 0
     for index, group in iso_6_month_results_groups:
-        isolation_infected = group["Infected (symptomatic)"][1:31]
+        isolation_infected = group["Infected_symptomatic"][1:31]
 
     isolation_hospitalised = 0
     for index, group in iso_6_month_results_groups:
@@ -234,7 +228,7 @@ def test_camp_baselines_with_do_nothing(instantiate_runner):
     sim_groups_camp = camp_baseline.groupby("R0")
     do_nothing_infected = 0
     for index, group in sim_groups:
-        do_nothing_infected = group["Infected (symptomatic)"][1:31]
+        do_nothing_infected = group["Infected_symptomatic"][1:31]
     do_nothing_hospitalised = 0
     for index, group in sim_groups:
         do_nothing_hospitalised = group["Hospitalised"][1:31]
@@ -246,7 +240,7 @@ def test_camp_baselines_with_do_nothing(instantiate_runner):
         do_nothing_deaths = group["Deaths"][1:31]
     camp_baseline_infected = 0
     for index, group in sim_groups_camp:
-        camp_baseline_infected = group["Infected (symptomatic)"][1:31]
+        camp_baseline_infected = group["Infected_symptomatic"][1:31]
     camp_baseline_hospitalised = 0
     for index, group in sim_groups_camp:
         camp_baseline_hospitalised = group["Hospitalised"][1:31]
