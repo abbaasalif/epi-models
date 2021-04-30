@@ -15,7 +15,7 @@
   "number_of_beds_now": 100,
   "number_of_beds_additional": 100,
   "number_of_ICU_beds": 6,
-  "ability_to_shield": false,
+  "ability_to_shield": true,
   "high_risk_offsite_number": 200,
   "mask_wearing": "0",
   "hand_washing": "0",

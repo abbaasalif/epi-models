@@ -261,3 +261,155 @@ def test_camp_baselines_with_do_nothing(instantiate_runner):
 
     # testing deaths is lesser in isolation scenarios than do nothing
     assert_array_less(camp_baseline_deaths, do_nothing_deaths)
+
+
+def test_run_different_scenarios(instantiate_runner):
+    result_set = instantiate_runner
+    do_nothing_baseline = result_set["do_nothing_baseline"]
+    better_hygiene_intervention_result = result_set[
+        "better_hygiene_intervention_result"
+    ]
+    increase_icu_intervention_result = result_set["increase_icu_intervention_result"]
+    increase_remove_high_risk_result = result_set["increase_remove_high_risk_result"]
+    better_isolation_intervention_result = result_set[
+        "better_isolation_intervention_result"
+    ]
+    shielding_intervention_result = result_set["shielding_intervention_result"]
+    sim_groups = do_nothing_baseline.groupby("R0")
+    sim_group_better_hygiene = better_hygiene_intervention_result.groupby("R0")
+    sim_group_increase_icu = increase_icu_intervention_result.groupby("R0")
+    sim_group_increase_remove_high_risk = increase_remove_high_risk_result.groupby("R0")
+    sim_group_better_isolation = better_hygiene_intervention_result.groupby("R0")
+    sim_group_shielding_intervention = shielding_intervention_result.groupby("R0")
+    do_nothing_infected = 0
+    for index, group in sim_groups:
+        do_nothing_infected = group["Infected_symptomatic"][1:31]
+    do_nothing_hospitalised = 0
+    for index, group in sim_groups:
+        do_nothing_hospitalised = group["Hospitalised"][1:31]
+    do_nothing_critical = 0
+    for index, group in sim_groups:
+        do_nothing_critical = group["Critical"][1:31]
+    do_nothing_deaths = 0
+    for index, group in sim_groups:
+        do_nothing_deaths = group["Deaths"][1:31]
+    better_hygiene_infected = 0
+    for index, group in sim_group_better_hygiene:
+        better_hygiene_infected = group["Infected_symptomatic"][1:31]
+    better_hygiene_hospitalised = 0
+    for index, group in sim_group_better_hygiene:
+        better_hygiene_hospitalised = group["Hospitalised"][1:31]
+    better_hygiene_critical = 0
+    for index, group in sim_group_better_hygiene:
+        better_hygiene_critical = group["Critical"][1:31]
+    better_hygiene_deaths = 0
+    for index, group in sim_group_better_hygiene:
+        better_hygiene_deaths = group["Deaths"][1:31]
+    increase_icu_infected = 0
+    for index, group in sim_group_increase_icu:
+        increase_icu_infected = group["Infected_symptomatic"][1:31]
+    increase_icu_hospitalised = 0
+    for index, group in sim_group_increase_icu:
+        increase_icu_hospitalised = group["Hospitalised"][1:31]
+    increase_icu_critical = 0
+    for index, group in sim_group_increase_icu:
+        increase_icu_critical = group["Critical"][1:31]
+    increase_icu_deaths = 0
+    for index, group in sim_group_increase_icu:
+        increase_icu_deaths = group["Deaths"][1:31]
+    increase_remove_high_risk_infected = 0
+    for index, group in sim_group_increase_remove_high_risk:
+        increase_remove_high_risk_infected = group["Infected_symptomatic"][1:31]
+    increase_remove_high_risk_hospitalised = 0
+    for index, group in sim_group_increase_remove_high_risk:
+        increase_remove_high_risk_hospitalised = group["Hospitalised"][1:31]
+    increase_remove_high_risk_critical = 0
+    for index, group in sim_group_increase_remove_high_risk:
+        increase_remove_high_risk_critical = group["Critical"][1:31]
+    increase_remove_high_risk_deaths = 0
+    for index, group in sim_group_increase_remove_high_risk:
+        increase_remove_high_risk_deaths = group["Deaths"][1:31]
+    better_isolation_infected = 0
+    for index, group in sim_group_better_isolation:
+        better_isolation_infected = group["Infected_symptomatic"][1:31]
+    better_isolation_hospitalised = 0
+    for index, group in sim_group_better_isolation:
+        better_isolation_hospitalised = group["Hospitalised"][1:31]
+    better_isolation_critical = 0
+    for index, group in sim_group_better_isolation:
+        better_isolation_critical = group["Critical"][1:31]
+    better_isolation_deaths = 0
+    for index, group in sim_group_better_isolation:
+        better_isolation_deaths = group["Deaths"][1:31]
+    shielding_intervention_infected = 0
+    for index, group in sim_group_shielding_intervention:
+        shielding_intervention_infected = group["Infected_symptomatic"][1:31]
+    shielding_intervention_hospitalised = 0
+    for index, group in sim_group_shielding_intervention:
+        shielding_intervention_hospitalised = group["Hospitalised"][1:31]
+    shielding_intervention_critical = 0
+    for index, group in sim_group_shielding_intervention:
+        shielding_intervention_critical = group["Critical"][1:31]
+    shielding_intervention_deaths = 0
+    for index, group in sim_group_shielding_intervention:
+        shielding_intervention_deaths = group["Deaths"][1:31]
+
+    # testing infected is lesser in isolation scenarios than do nothing
+    assert_array_less(better_hygiene_infected, do_nothing_infected)
+
+    # testing hospitalised is lesser in isolation scenarios than do nothing
+    assert_array_less(better_hygiene_hospitalised, do_nothing_hospitalised)
+
+    # testing critical is lesser in isolation scenarios than do nothing
+    assert_array_less(better_hygiene_critical, do_nothing_critical)
+
+    # testing deaths is lesser in isolation scenarios than do nothing
+    assert_array_less(better_hygiene_deaths, do_nothing_deaths)
+
+    # # testing infected is lesser in isolation scenarios than do nothing
+    # assert_array_less(increase_icu_infected, do_nothing_infected)
+
+    # # testing hospitalised is lesser in isolation scenarios than do nothing
+    # assert_array_less(increase_icu_hospitalised, do_nothing_hospitalised)
+
+    # # testing critical is lesser in isolation scenarios than do nothing
+    # assert_array_less(increase_icu_critical, do_nothing_critical)
+
+    # # testing deaths is lesser in isolation scenarios than do nothing
+    # assert_array_less(increase_icu_deaths, do_nothing_deaths)
+
+    # testing infected is lesser in isolation scenarios than do nothing
+    assert_array_less(increase_remove_high_risk_infected, do_nothing_infected)
+
+    # testing hospitalised is lesser in isolation scenarios than do nothing
+    assert_array_less(increase_remove_high_risk_hospitalised, do_nothing_hospitalised)
+
+    # testing critical is lesser in isolation scenarios than do nothing
+    assert_array_less(increase_remove_high_risk_critical, do_nothing_critical)
+
+    # testing deaths is lesser in isolation scenarios than do nothing
+    assert_array_less(increase_remove_high_risk_deaths, do_nothing_deaths)
+
+    # testing infected is lesser in isolation scenarios than do nothing
+    assert_array_less(better_isolation_infected, do_nothing_infected)
+
+    # testing hospitalised is lesser in isolation scenarios than do nothing
+    assert_array_less(better_isolation_hospitalised, do_nothing_hospitalised)
+
+    # testing critical is lesser in isolation scenarios than do nothing
+    assert_array_less(better_isolation_critical, do_nothing_critical)
+
+    # testing deaths is lesser in isolation scenarios than do nothing
+    assert_array_less(better_isolation_deaths, do_nothing_deaths)
+
+    # # testing infected is lesser in isolation scenarios than do nothing
+    # assert_array_less(shielding_intervention_infected, do_nothing_infected)
+
+    # # testing hospitalised is lesser in isolation scenarios than do nothing
+    # assert_array_less(shielding_intervention_hospitalised, do_nothing_hospitalised)
+
+    # # testing critical is lesser in isolation scenarios than do nothing
+    # assert_array_less(shielding_intervention_critical, do_nothing_critical)
+
+    # # testing deaths is lesser in isolation scenarios than do nothing
+    # assert_array_less(shielding_intervention_deaths, do_nothing_deaths)
